@@ -249,6 +249,8 @@ VOID PhAddDefaultSettings(
     PhpAddIntegerSetting(L"ColorIoWrite", L"ff0077");
     PhpAddIntegerSetting(L"ColorPrivate", L"0077ff");
     PhpAddIntegerSetting(L"ColorPhysical", L"ff8000"); // Blue
+
+    PhpAddStringSetting(L"CollapseProcesses", L"");
 }
 
 VOID PhUpdateCachedSettings(

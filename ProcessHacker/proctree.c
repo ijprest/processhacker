@@ -344,6 +344,47 @@ FORCEINLINE BOOLEAN PhpValidateParentProcessNode(
     }
 }
 
+VOID PhCollapseProcessIfNecessary(
+    _In_ PPH_PROCESS_ITEM ProcessItem,
+    _In_ PPH_TREENEW_NODE ProcessNode
+    )
+{
+    static PPH_LIST list = NULL;
+    if (list == NULL)
+    {
+        list = PhCreateList(10);
+
+        PPH_STRING collapseProcesses = PhGetStringSetting(L"CollapseProcesses");
+        PH_STRINGREF left = {0};
+        PH_STRINGREF right = {0};
+        PH_STRINGREF start = collapseProcesses->sr;
+        while(PhSplitStringRefAtChar(&start, L'\n', &left, &right))
+        {
+            static PH_STRINGREF whitespace = PH_STRINGREF_INIT(L" \t\r\n");
+            PhTrimStringRef(&left, &whitespace, 0/*trim both sides*/);
+            PPH_STRING copy = PhCreateString2(&left);
+            PhAddItemList(list, copy);
+            start = right;
+        }
+        if (left.Length > 0)
+        {
+            PPH_STRING copy = PhCreateString2(&left);
+            PhAddItemList(list, copy);
+        }
+
+        PhDereferenceObject(collapseProcesses);
+    }
+
+    for (ULONG i = 0; i < list->Count; ++i)
+    {
+        if (PhEqualString(ProcessItem->ProcessName, (PPH_STRING)list->Items[i], TRUE))
+        {
+            ProcessNode->Expanded = FALSE;
+            break;
+        }
+    }
+}
+
 PPH_PROCESS_NODE PhAddProcessNode(
     _In_ PPH_PROCESS_ITEM ProcessItem,
     _In_ ULONG RunId
@@ -356,6 +397,7 @@ PPH_PROCESS_NODE PhAddProcessNode(
     processNode = PhAllocate(PhEmGetObjectSize(EmProcessNodeType, sizeof(PH_PROCESS_NODE)));
     memset(processNode, 0, sizeof(PH_PROCESS_NODE));
     PhInitializeTreeNewNode(&processNode->Node);
+    PhCollapseProcessIfNecessary(ProcessItem, &processNode->Node);
 
     if (PhProcessTreeListStateHighlighting && RunId != 1)
     {
