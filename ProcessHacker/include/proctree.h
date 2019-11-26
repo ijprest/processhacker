@@ -182,6 +182,7 @@ typedef struct _PH_PROCESS_NODE
     ULONG64 TooltipTextValidToTickCount;
 
     // Text buffers
+    PPH_STRING ProcessNameAggregate;
     WCHAR CpuUsageText[PH_INT32_STR_LEN_1 + 3];
     WCHAR IoTotalRateText[PH_INT32_STR_LEN_1 + 3];
     WCHAR PrivateBytesText[PH_INT32_STR_LEN_1];
