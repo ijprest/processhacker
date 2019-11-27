@@ -236,6 +236,13 @@ VOID PhAddDefaultSettings(
     PhpAddIntegerSetting(L"UseColorUnknown", L"1");
     PhpAddIntegerSetting(L"ColorUnknown", L"8080ff"); // Light Red
 
+    PhpAddIntegerSetting(L"UseColorColumnCPU", L"0");
+    PhpAddIntegerSetting(L"ColorColumnCPU", L"f0f9f0");
+    PhpAddIntegerSetting(L"UseColorColumnPrivateBytes", L"0");
+    PhpAddIntegerSetting(L"ColorColumnPrivateBytes", L"eafbff");
+    PhpAddIntegerSetting(L"UseColorColumnWorkingSet", L"0");
+    PhpAddIntegerSetting(L"ColorColumnWorkingSet", L"eaf1ff");
+
     PhpAddIntegerSetting(L"UseColorSystemThreadStack", L"0");
     PhpAddIntegerSetting(L"ColorSystemThreadStack", L"ffccaa");
     PhpAddIntegerSetting(L"UseColorUserThreadStack", L"0");
@@ -307,6 +314,13 @@ VOID PhUpdateCachedSettings(
     PH_UPDATE_SETTING(ColorServiceStop);
     PH_UPDATE_SETTING(UseColorUnknown);
     PH_UPDATE_SETTING(ColorUnknown);
+
+    PH_UPDATE_SETTING(UseColorColumnCPU);
+    PH_UPDATE_SETTING(ColorColumnCPU);
+    PH_UPDATE_SETTING(UseColorColumnPrivateBytes);
+    PH_UPDATE_SETTING(ColorColumnPrivateBytes);
+    PH_UPDATE_SETTING(UseColorColumnWorkingSet);
+    PH_UPDATE_SETTING(ColorColumnWorkingSet);
 
     PH_UPDATE_SETTING(UseColorSystemThreadStack);
     PH_UPDATE_SETTING(ColorSystemThreadStack);

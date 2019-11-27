@@ -515,7 +515,8 @@ BOOLEAN PhTnpGetCellText(
     _In_ PPH_TREENEW_CONTEXT Context,
     _In_ PPH_TREENEW_NODE Node,
     _In_ ULONG Id,
-    _Out_ PPH_STRINGREF Text
+    _Out_ PPH_STRINGREF Text,
+    _Out_ LPCOLORREF CellColor
     );
 
 VOID PhTnpRestructureNodes(

@@ -418,6 +418,8 @@ PPH_PROCESS_NODE PhAddProcessNode(
     memset(processNode->TextCache, 0, sizeof(PH_STRINGREF) * PHPRTLC_MAXIMUM);
     processNode->Node.TextCache = processNode->TextCache;
     processNode->Node.TextCacheSize = PHPRTLC_MAXIMUM;
+    memset(processNode->CellColorCache, 0xFF, sizeof(COLORREF) * PHPRTLC_MAXIMUM);
+    processNode->Node.CellColorCache = processNode->CellColorCache;
 
     processNode->Children = PhCreateList(1);
 
@@ -2220,6 +2222,8 @@ BOOLEAN NTAPI PhpProcessTreeNewCallback(
                             getCellText->Text.Length = returnLength - sizeof(UNICODE_NULL);
                         }
                     }
+                    if (PhCsUseColorColumnCPU)
+                        getCellText->CellColor = PhCsColorColumnCPU;
                 }
                 break;
             case PHPRTLC_IOTOTALRATE:
@@ -2265,6 +2269,8 @@ BOOLEAN NTAPI PhpProcessTreeNewCallback(
                         getCellText->Text.Buffer = node->PrivateBytesText;
                         getCellText->Text.Length = returnLength - sizeof(UNICODE_NULL);
                     }
+                    if (PhCsUseColorColumnPrivateBytes)
+                        getCellText->CellColor = PhCsColorColumnPrivateBytes;
                 }
                 break;
             case PHPRTLC_USERNAME:
@@ -2298,6 +2304,8 @@ BOOLEAN NTAPI PhpProcessTreeNewCallback(
                     PhpAggregateFieldIfNeeded(node, AggregateTypeIntPtr, AggregateLocationProcessItem, FIELD_OFFSET(PH_PROCESS_ITEM, VmCounters.WorkingSetSize), &value);
                     PhMoveReference(&node->WorkingSetText, PhFormatSize(value, ULONG_MAX));
                     getCellText->Text = node->WorkingSetText->sr;
+                    if (PhCsUseColorColumnWorkingSet)
+                        getCellText->CellColor = PhCsColorColumnWorkingSet;
                 }
                 break;
             case PHPRTLC_PEAKWORKINGSET:

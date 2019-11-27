@@ -73,6 +73,7 @@ typedef struct _PH_TREENEW_NODE
     HICON Icon;
 
     PPH_STRINGREF TextCache;
+    LPCOLORREF CellColorCache;
     ULONG TextCacheSize;
 
     ULONG Index; // Index within the flat list
@@ -264,6 +265,7 @@ typedef struct _PH_TREENEW_GET_CELL_TEXT
     ULONG Id;
 
     PH_STRINGREF Text;
+    COLORREF CellColor;
 } PH_TREENEW_GET_CELL_TEXT, *PPH_TREENEW_GET_CELL_TEXT;
 
 typedef struct _PH_TREENEW_GET_NODE_COLOR

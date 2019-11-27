@@ -1821,7 +1821,8 @@ ULONG_PTR PhTnpOnUserMessage(
                 Context,
                 getCellText->Node,
                 getCellText->Id,
-                &getCellText->Text
+                &getCellText->Text,
+                &getCellText->CellColor
                 );
         }
         break;
@@ -3222,13 +3223,16 @@ BOOLEAN PhTnpGetCellText(
     _In_ PPH_TREENEW_CONTEXT Context,
     _In_ PPH_TREENEW_NODE Node,
     _In_ ULONG Id,
-    _Out_ PPH_STRINGREF Text
+    _Out_ PPH_STRINGREF Text,
+    _Out_ LPCOLORREF CellColor
     )
 {
     PH_TREENEW_GET_CELL_TEXT getCellText;
 
     if (Id < Node->TextCacheSize && Node->TextCache[Id].Buffer)
     {
+        if (CellColor != NULL && Node->CellColorCache != NULL)
+            *CellColor = Node->CellColorCache[Id];
         *Text = Node->TextCache[Id];
         return TRUE;
     }
@@ -3237,6 +3241,7 @@ BOOLEAN PhTnpGetCellText(
     getCellText.Node = Node;
     getCellText.Id = Id;
     PhInitializeEmptyStringRef(&getCellText.Text);
+    getCellText.CellColor = 0xFFFFFFFF;
 
     if (Context->Callback(
         Context->Handle,
@@ -3244,14 +3249,24 @@ BOOLEAN PhTnpGetCellText(
         &getCellText,
         NULL,
         Context->CallbackContext
-        ) && getCellText.Text.Buffer)
+        ))
     {
-        *Text = getCellText.Text;
+        if (CellColor != NULL)
+            *CellColor = getCellText.CellColor;
 
-        if ((getCellText.Flags & TN_CACHE) && Id < Node->TextCacheSize)
-            Node->TextCache[Id] = getCellText.Text;
+        if (getCellText.Text.Buffer)
+        {
+            *Text = getCellText.Text;
 
-        return TRUE;
+            if ((getCellText.Flags & TN_CACHE) && Id < Node->TextCacheSize)
+            {
+                if (Node->CellColorCache != NULL)
+                    Node->CellColorCache[Id] = getCellText.CellColor;
+                Node->TextCache[Id] = getCellText.Text;
+            }
+
+            return TRUE;
+        }
     }
 
     return FALSE;
@@ -3498,7 +3513,7 @@ BOOLEAN PhTnpGetCellParts(
         {
             PhTnpPrepareRowForDraw(Context, hdc, node);
 
-            if (PhTnpGetCellText(Context, node, Column->Id, &text))
+            if (PhTnpGetCellText(Context, node, Column->Id, &text, NULL))
             {
                 if (node->Font)
                     font = node->Font;
@@ -4667,7 +4682,7 @@ BOOLEAN PhTnpDefaultIncrementalSearch(
         if (!firstTime && currentIndex == startIndex)
             break;
 
-        if (PhTnpGetCellText(Context, Context->FlatList->Items[currentIndex], Context->FirstColumn->Id, &text))
+        if (PhTnpGetCellText(Context, Context->FlatList->Items[currentIndex], Context->FirstColumn->Id, &text, NULL))
         {
             if (Partial)
             {
@@ -5638,8 +5653,15 @@ VOID PhTnpDrawCell(
             return;
     }
 
-    if (PhTnpGetCellText(Context, Node, Column->Id, &text))
+    COLORREF cellColor = 0xFFFFFFFF;
+    if (PhTnpGetCellText(Context, Node, Column->Id, &text, &cellColor))
     {
+        if (!Node->Selected && Context->HotNodeIndex != RowIndex && cellColor != 0xFFFFFFFF)
+        {
+            SetDCBrushColor(hdc, cellColor);
+            FillRect(hdc, CellRect, GetStockBrush(DC_BRUSH));
+        }
+
         if (!(textFlags & (DT_PATH_ELLIPSIS | DT_WORD_ELLIPSIS)))
             textFlags |= DT_END_ELLIPSIS;
 
@@ -5661,6 +5683,11 @@ VOID PhTnpDrawCell(
 
         if (font)
             SelectFont(hdc, oldFont);
+    }
+    else if (!Node->Selected && Context->HotNodeIndex != RowIndex && cellColor != 0xFFFFFFFF)
+    {
+        SetDCBrushColor(hdc, cellColor);
+        FillRect(hdc, CellRect, GetStockBrush(DC_BRUSH));
     }
 }
 

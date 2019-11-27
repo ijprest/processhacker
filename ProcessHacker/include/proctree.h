@@ -132,6 +132,7 @@ typedef struct _PH_PROCESS_NODE
 // end_phapppub
 
     PH_STRINGREF TextCache[PHPRTLC_MAXIMUM];
+    COLORREF CellColorCache[PHPRTLC_MAXIMUM];
 
     PH_STRINGREF DescriptionText;
 
