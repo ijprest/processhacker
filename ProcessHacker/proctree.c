@@ -2168,15 +2168,18 @@ BOOLEAN NTAPI PhpProcessTreeNewCallback(
             case PHPRTLC_NAME:
                 {
                     if (!PhCsPropagateCpuUsage || node->Node.Expanded || ProcessTreeListSortOrder != NoSortOrder)
-                    {
                         getCellText->Text = processItem->ProcessName->sr;
-                    }
                     else
                     {
                         ULONG value = 0;
                         PhpAggregateFieldIfNeeded(node, AggregateTypeInt32, AggregateLocationProcessChildren, FIELD_OFFSET(PH_LIST, Count), &value);
-                        node->ProcessNameAggregate = PhFormatString(L"%s (+%d)", processItem->ProcessName->Buffer, value);
-                        getCellText->Text = node->ProcessNameAggregate->sr;
+                        if (value == 0)
+                            getCellText->Text = processItem->ProcessName->sr;
+                        else
+                        {
+                            node->ProcessNameAggregate = PhFormatString(L"%s (+%d)", processItem->ProcessName->Buffer, value);
+                            getCellText->Text = node->ProcessNameAggregate->sr;
+                        }
                     }
                 }
                 break;
