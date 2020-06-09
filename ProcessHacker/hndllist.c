@@ -458,10 +458,11 @@ BOOLEAN NTAPI PhpHandleTreeNewCallback(
     _In_opt_ PVOID Context
     )
 {
-    PPH_HANDLE_LIST_CONTEXT context;
+    PPH_HANDLE_LIST_CONTEXT context = Context;
     PPH_HANDLE_NODE node;
 
-    context = Context;
+    if (!context)
+        return FALSE;
 
     if (PhCmForwardMessage(hwnd, Message, Parameter1, Parameter2, &context->Cm))
         return TRUE;
@@ -471,6 +472,9 @@ BOOLEAN NTAPI PhpHandleTreeNewCallback(
     case TreeNewGetChildren:
         {
             PPH_TREENEW_GET_CHILDREN getChildren = Parameter1;
+
+            if (!getChildren)
+                break;
 
             if (!getChildren->Node)
             {
@@ -520,6 +524,9 @@ BOOLEAN NTAPI PhpHandleTreeNewCallback(
         {
             PPH_TREENEW_IS_LEAF isLeaf = Parameter1;
 
+            if (!isLeaf)
+                break;
+
             isLeaf->IsLeaf = TRUE;
         }
         return TRUE;
@@ -527,6 +534,9 @@ BOOLEAN NTAPI PhpHandleTreeNewCallback(
         {
             PPH_TREENEW_GET_CELL_TEXT getCellText = Parameter1;
             PPH_HANDLE_ITEM handleItem;
+
+            if (!getCellText)
+                break;
 
             node = (PPH_HANDLE_NODE)getCellText->Node;
             handleItem = node->HandleItem;
@@ -593,17 +603,17 @@ BOOLEAN NTAPI PhpHandleTreeNewCallback(
             case PHHNTLC_FILESHAREACCESS:
                 if (handleItem->FileFlags & PH_HANDLE_FILE_SHARED_MASK)
                 {
-                    node->FileShareAccessText[0] = '-';
-                    node->FileShareAccessText[1] = '-';
-                    node->FileShareAccessText[2] = '-';
+                    node->FileShareAccessText[0] = L'-';
+                    node->FileShareAccessText[1] = L'-';
+                    node->FileShareAccessText[2] = L'-';
                     node->FileShareAccessText[3] = UNICODE_NULL;
 
                     if (handleItem->FileFlags & PH_HANDLE_FILE_SHARED_READ)
-                        node->FileShareAccessText[0] = 'R';
+                        node->FileShareAccessText[0] = L'R';
                     if (handleItem->FileFlags & PH_HANDLE_FILE_SHARED_WRITE)
-                        node->FileShareAccessText[1] = 'W';
+                        node->FileShareAccessText[1] = L'W';
                     if (handleItem->FileFlags & PH_HANDLE_FILE_SHARED_DELETE)
-                        node->FileShareAccessText[2] = 'D';
+                        node->FileShareAccessText[2] = L'D';
 
                     PhInitializeStringRef(&getCellText->Text, node->FileShareAccessText);
                 }
@@ -619,6 +629,9 @@ BOOLEAN NTAPI PhpHandleTreeNewCallback(
         {
             PPH_TREENEW_GET_NODE_COLOR getNodeColor = Parameter1;
             PPH_HANDLE_ITEM handleItem;
+
+            if (!getNodeColor)
+                break;
 
             node = (PPH_HANDLE_NODE)getNodeColor->Node;
             handleItem = node->HandleItem;
@@ -643,6 +656,9 @@ BOOLEAN NTAPI PhpHandleTreeNewCallback(
     case TreeNewKeyDown:
         {
             PPH_TREENEW_KEY_EVENT keyEvent = Parameter1;
+
+            if (!keyEvent)
+                break;
 
             switch (keyEvent->VirtualKey)
             {

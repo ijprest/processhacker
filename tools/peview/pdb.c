@@ -25,6 +25,7 @@
 #include <symprv.h>
 #include <pdb.h>
 #include <uxtheme.h>
+#include <malloc.h>
 
 typedef BOOL (WINAPI *_SymInitializeW)(
     _In_ HANDLE hProcess,
@@ -1036,7 +1037,7 @@ BOOLEAN PdbGetSymbolUdtFunctions(
     )
 {
     ULONG childrenLength = 0;
-    TI_FINDCHILDREN_PARAMS* symbolParams;
+    TI_FINDCHILDREN_PARAMS* symbolParams = NULL;
 
     if (!PdbCheckTagType(BaseAddress, Index, SymTagUDT))
         return FALSE;

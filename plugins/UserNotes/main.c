@@ -3,7 +3,7 @@
  *   main program
  *
  * Copyright (C) 2011-2016 wj32
- * Copyright (C) 2016-2017 dmex
+ * Copyright (C) 2016-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -127,19 +127,20 @@ VOID LoadCustomColors(
     PH_STRINGREF part;
 
     settingsString = PhaGetStringSetting(SETTING_NAME_CUSTOM_COLOR_LIST);
-    remaining = settingsString->sr;
 
-    if (remaining.Length == 0)
+    if (PhIsNullOrEmptyString(settingsString))
         return;
 
-    for (ULONG i = 0; i < ARRAYSIZE(ProcessCustomColors); i++)
+    remaining = PhGetStringRef(settingsString);
+
+    for (ULONG i = 0; i < RTL_NUMBER_OF(ProcessCustomColors); i++)
     {
         ULONG64 integer = 0;
 
         if (remaining.Length == 0)
             break;
 
-        PhSplitStringRefAtChar(&remaining, ',', &part, &remaining);
+        PhSplitStringRefAtChar(&remaining, L',', &part, &remaining);
 
         if (PhStringToInteger64(&part, 10, &integer))
         {
@@ -156,7 +157,7 @@ PPH_STRING SaveCustomColors(
 
     PhInitializeStringBuilder(&stringBuilder, 100);
 
-    for (ULONG i = 0; i < ARRAYSIZE(ProcessCustomColors); i++)
+    for (ULONG i = 0; i < RTL_NUMBER_OF(ProcessCustomColors); i++)
     {
         PhAppendFormatStringBuilder(
             &stringBuilder,
@@ -170,6 +171,44 @@ PPH_STRING SaveCustomColors(
 
     return PhFinalStringBuilderString(&stringBuilder);
 }
+
+VOID LoadCollapseServicesOnStart(
+    VOID
+    )
+{
+    // This is for backwards compat with PhCsCollapseServicesOnStart (dmex)
+    // https://github.com/processhacker/processhacker/issues/519
+
+    if (PhGetIntegerSetting(SETTING_NAME_COLLAPSE_SERVICES_AT_START))
+    {
+        static PH_STRINGREF servicesBaseName = PH_STRINGREF_INIT(L"services.exe");
+        PDB_OBJECT object;
+
+        if (object = FindDbObject(FILE_TAG, &servicesBaseName))
+        {
+            object->Collapse = TRUE;
+        }
+        else
+        {
+            object = CreateDbObject(FILE_TAG, &servicesBaseName, NULL);
+            object->Collapse = TRUE;
+        }
+    }
+    else
+    {
+        static PH_STRINGREF servicesBaseName = PH_STRINGREF_INIT(L"services.exe");
+        PDB_OBJECT object;
+
+        object = FindDbObject(FILE_TAG, &servicesBaseName);
+
+        if (object && object->Collapse)
+        {
+            object->Collapse = FALSE;
+            DeleteDbObjectForProcessIfUnused(object);
+        }
+    }
+}
+
 
 NTSTATUS GetProcessAffinity(
     _In_ HANDLE ProcessId,
@@ -270,7 +309,7 @@ ULONG GetIoPriorityFromId(
         return 3;
     }
 
-    return -1;
+    return ULONG_MAX;
 }
 
 VOID NTAPI LoadCallback(
@@ -303,7 +342,7 @@ VOID NTAPI LoadCallback(
         path = PhaGetStringSetting(SETTING_NAME_DATABASE_PATH);
         path = PH_AUTO(PhExpandEnvironmentStrings(&path->sr));
 
-        if (RtlDetermineDosPathNameType_U(path->Buffer) == RtlPathTypeRelative)
+        if (PhDetermineDosPathNameType(path->Buffer) == RtlPathTypeRelative)
         {
             directory = PH_AUTO(PhGetApplicationDirectory());
             path = PH_AUTO(PhConcatStringRef2(&directory->sr, &path->sr));
@@ -314,6 +353,7 @@ VOID NTAPI LoadCallback(
 
     LoadDb();
     LoadCustomColors();
+    LoadCollapseServicesOnStart();
 }
 
 VOID NTAPI UnloadCallback(
@@ -1443,7 +1483,8 @@ LOGICAL DllMain(
         PH_SETTING_CREATE settings[] =
         {
             { StringSettingType, SETTING_NAME_DATABASE_PATH, L"%APPDATA%\\Process Hacker\\usernotesdb.xml" },
-            { StringSettingType, SETTING_NAME_CUSTOM_COLOR_LIST, L"" }
+            { StringSettingType, SETTING_NAME_CUSTOM_COLOR_LIST, L"" },
+            { IntegerSettingType, SETTING_NAME_COLLAPSE_SERVICES_AT_START, L"0" }
         };
 
         PluginInstance = PhRegisterPlugin(PLUGIN_NAME, Instance, &info);
@@ -1577,7 +1618,7 @@ LOGICAL DllMain(
             ServiceItemDeleteCallback
             );
 
-        PhAddSettings(settings, ARRAYSIZE(settings));
+        PhAddSettings(settings, RTL_NUMBER_OF(settings));
     }
 
     return TRUE;
@@ -1601,6 +1642,9 @@ INT_PTR CALLBACK OptionsDlgProc(
             PhInitializeLayoutManager(&LayoutManager, hwndDlg);
             PhAddLayoutItem(&LayoutManager, GetDlgItem(hwndDlg, IDC_DATABASE), NULL, PH_ANCHOR_TOP | PH_ANCHOR_LEFT | PH_ANCHOR_RIGHT);
             PhAddLayoutItem(&LayoutManager, GetDlgItem(hwndDlg, IDC_BROWSE), NULL, PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
+
+            Button_SetCheck(GetDlgItem(hwndDlg, IDC_COLLAPSE_SERVICES_CHECK),
+                !!PhGetIntegerSetting(SETTING_NAME_COLLAPSE_SERVICES_AT_START));
 
             PhSetDialogFocus(hwndDlg, GetDlgItem(hwndDlg, IDCANCEL));
         }
@@ -1644,6 +1688,18 @@ INT_PTR CALLBACK OptionsDlgProc(
                     }
 
                     PhFreeFileDialog(fileDialog);
+                }
+                break;
+            case IDC_COLLAPSE_SERVICES_CHECK:
+                {
+                    PhSetIntegerSetting(SETTING_NAME_COLLAPSE_SERVICES_AT_START,
+                        Button_GetCheck(GET_WM_COMMAND_HWND(wParam, lParam)) == BST_CHECKED);
+
+                    // uncomment for realtime toggle
+                    //LoadCollapseServicesOnStart();
+                    //PhExpandAllProcessNodes(TRUE);
+                    //if (ToolStatusInterface)
+                    //    PhInvokeCallback(ToolStatusInterface->SearchChangedEvent, PH_AUTO(PhReferenceEmptyString()));
                 }
                 break;
             }

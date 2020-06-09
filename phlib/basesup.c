@@ -252,7 +252,7 @@ HANDLE PhCreateThread(
         &threadHandle,
         NULL
         );
-    
+
     // NOTE: PhCreateThread previously used CreateThread with callers using GetLastError()
     // for checking errors. We need to preserve this behavior for compatibility -dmex
     // TODO: Migrate code over to PhCreateThreadEx and remove this function.
@@ -425,6 +425,24 @@ VOID PhLocalTimeToSystemTime(
     SystemTime->QuadPart = LocalTime->QuadPart + timeZoneBias.QuadPart;
 }
 
+NTSTATUS PhDelayExecution(
+    _In_ LONGLONG Interval
+    )
+{
+    if (Interval == INFINITE) // HACK (dmex)
+    {
+        return NtDelayExecution(FALSE, NULL);
+    }
+    else
+    {
+        LARGE_INTEGER interval;
+
+        interval.QuadPart = -(LONGLONG)UInt32x32To64(Interval, PH_TIMEOUT_MS);
+
+        return NtDelayExecution(FALSE, &interval);
+    }
+}
+
 /**
  * Allocates a block of memory.
  *
@@ -538,6 +556,7 @@ PVOID PhReAllocateSafe(
  */
 _Check_return_
 _Ret_maybenull_
+_Success_(return != NULL)
 PVOID PhAllocatePage(
     _In_ SIZE_T Size,
     _Out_opt_ PSIZE_T NewSize
@@ -597,6 +616,7 @@ SIZE_T PhCountStringZ(
     _In_ PWSTR String
     )
 {
+#ifndef _ARM64_
     if (PhpVectorLevel >= PH_VECTOR_LEVEL_SSE2)
     {
         PWSTR p;
@@ -635,6 +655,7 @@ SIZE_T PhCountStringZ(
         }
     }
     else
+#endif
     {
         return wcslen(String);
     }
@@ -1278,6 +1299,7 @@ BOOLEAN PhEqualStringRef(
     s1 = String1->Buffer;
     s2 = String2->Buffer;
 
+#ifndef _ARM64_
     if (PhpVectorLevel >= PH_VECTOR_LEVEL_SSE2)
     {
         length = l1 / 16;
@@ -1317,6 +1339,7 @@ BOOLEAN PhEqualStringRef(
         l1 = (l1 & 15) / sizeof(WCHAR);
     }
     else
+#endif
     {
         length = l1 / sizeof(ULONG_PTR);
 
@@ -1414,6 +1437,7 @@ ULONG_PTR PhFindCharInStringRef(
 
     if (!IgnoreCase)
     {
+#ifndef _ARM64_
         if (PhpVectorLevel >= PH_VECTOR_LEVEL_SSE2)
         {
             SIZE_T length16;
@@ -1442,6 +1466,12 @@ ULONG_PTR PhFindCharInStringRef(
                     buffer += 16 / sizeof(WCHAR);
                 } while (--length16 != 0);
             }
+        }
+        else
+#endif
+        {
+            if (buffer)
+                wcschr(buffer, Character);
         }
 
         if (length != 0)
@@ -1500,6 +1530,7 @@ ULONG_PTR PhFindLastCharInStringRef(
 
     if (!IgnoreCase)
     {
+#ifndef _ARM64_
         if (PhpVectorLevel >= PH_VECTOR_LEVEL_SSE2)
         {
             SIZE_T length16;
@@ -1531,6 +1562,12 @@ ULONG_PTR PhFindLastCharInStringRef(
 
                 buffer += 16 / sizeof(WCHAR);
             }
+        }
+        else
+#endif
+        {
+            if (buffer)
+                wcsrchr(buffer, Character);
         }
 
         if (length != 0)
@@ -2455,7 +2492,7 @@ PPH_STRING PhFormatString_V(
     )
 {
     PPH_STRING string;
-    int length;
+    INT length;
 
     length = _vscwprintf(Format, ArgPtr);
 
@@ -3778,7 +3815,7 @@ VOID PhAppendFormatStringBuilder_V(
     _In_ va_list ArgPtr
     )
 {
-    int length;
+    INT length;
     SIZE_T lengthInBytes;
 
     length = _vscwprintf(Format, ArgPtr);
@@ -4778,7 +4815,7 @@ PPH_HASHTABLE PhCreateHashtable(
     hashtable->Entries = PhAllocate(PH_HASHTABLE_ENTRY_SIZE(EntrySize) * hashtable->AllocatedEntries);
 
     hashtable->Count = 0;
-    hashtable->FreeEntry = -1;
+    hashtable->FreeEntry = ULONG_MAX;
     hashtable->NextEntry = 0;
 
     return hashtable;
@@ -4969,7 +5006,7 @@ VOID PhClearHashtable(
     {
         memset(Hashtable->Buckets, 0xff, sizeof(ULONG) * Hashtable->AllocatedBuckets);
         Hashtable->Count = 0;
-        Hashtable->FreeEntry = -1;
+        Hashtable->FreeEntry = ULONG_MAX;
         Hashtable->NextEntry = 0;
     }
 }
@@ -5792,9 +5829,9 @@ BOOLEAN PhStringToInteger64(
     string = *String;
     negative = FALSE;
 
-    if (string.Length != 0 && (string.Buffer[0] == '-' || string.Buffer[0] == '+'))
+    if (string.Length != 0 && (string.Buffer[0] == L'-' || string.Buffer[0] == L'+'))
     {
-        if (string.Buffer[0] == '-')
+        if (string.Buffer[0] == L'-')
             negative = TRUE;
 
         PhSkipStringRef(&string, sizeof(WCHAR));
@@ -5810,36 +5847,36 @@ BOOLEAN PhStringToInteger64(
     {
         base = 10;
 
-        if (string.Length >= 2 * sizeof(WCHAR) && string.Buffer[0] == '0')
+        if (string.Length >= 2 * sizeof(WCHAR) && string.Buffer[0] == L'0')
         {
             switch (string.Buffer[1])
             {
-            case 'x':
-            case 'X':
+            case L'x':
+            case L'X':
                 base = 16;
                 break;
-            case 'o':
-            case 'O':
+            case L'o':
+            case L'O':
                 base = 8;
                 break;
-            case 'b':
-            case 'B':
+            case L'b':
+            case L'B':
                 base = 2;
                 break;
-            case 't': // ternary
-            case 'T':
+            case L't': // ternary
+            case L'T':
                 base = 3;
                 break;
-            case 'q': // quaternary
-            case 'Q':
+            case L'q': // quaternary
+            case L'Q':
                 base = 4;
                 break;
-            case 'w': // base 12
-            case 'W':
+            case L'w': // base 12
+            case L'W':
                 base = 12;
                 break;
-            case 'r': // base 32
-            case 'R':
+            case L'r': // base 32
+            case L'R':
                 base = 32;
                 break;
             }
@@ -5876,7 +5913,7 @@ BOOLEAN PhpStringToDouble(
 
     for (i = 0; i < length; i++)
     {
-        if (String->Buffer[i] == '.')
+        if (String->Buffer[i] == L'.')
         {
             if (!dotSeen)
                 dotSeen = TRUE;
@@ -5934,9 +5971,9 @@ BOOLEAN PhStringToDouble(
     string = *String;
     negative = FALSE;
 
-    if (string.Length != 0 && (string.Buffer[0] == '-' || string.Buffer[0] == '+'))
+    if (string.Length != 0 && (string.Buffer[0] == L'-' || string.Buffer[0] == L'+'))
     {
-        if (string.Buffer[0] == '-')
+        if (string.Buffer[0] == L'-')
             negative = TRUE;
 
         PhSkipStringRef(&string, sizeof(WCHAR));
@@ -5991,44 +6028,74 @@ VOID PhPrintTimeSpan(
     _In_opt_ ULONG Mode
     )
 {
+    PhPrintTimeSpanToBuffer(
+        Ticks,
+        Mode,
+        Destination,
+        PH_TIMESPAN_STR_LEN,
+        NULL
+        );
+}
+
+BOOLEAN PhPrintTimeSpanToBuffer(
+    _In_ ULONG64 Ticks,
+    _In_opt_ ULONG Mode,
+    _Out_writes_bytes_(BufferLength) PWSTR Buffer,
+    _In_ SIZE_T BufferLength,
+    _Out_opt_ PSIZE_T ReturnLength
+    )
+{
     switch (Mode)
     {
     case PH_TIMESPAN_HMSM:
-        _snwprintf_s(
-            Destination,
-            PH_TIMESPAN_STR_LEN,
-            _TRUNCATE,
-            L"%02I64u:%02I64u:%02I64u.%03I64u",
-            PH_TICKS_PARTIAL_HOURS(Ticks),
-            PH_TICKS_PARTIAL_MIN(Ticks),
-            PH_TICKS_PARTIAL_SEC(Ticks),
-            PH_TICKS_PARTIAL_MS(Ticks)
-            );
+        {
+            PH_FORMAT format[7];
+
+            // %02I64u:%02I64u:%02I64u.%03I64u
+            PhInitFormatI64UWithWidth(&format[0], PH_TICKS_PARTIAL_HOURS(Ticks), 2);
+            PhInitFormatC(&format[1], L':');
+            PhInitFormatI64UWithWidth(&format[2], PH_TICKS_PARTIAL_MIN(Ticks), 2);
+            PhInitFormatC(&format[3], L':');
+            PhInitFormatI64UWithWidth(&format[4], PH_TICKS_PARTIAL_SEC(Ticks), 2);
+            PhInitFormatC(&format[5], L'.');
+            PhInitFormatI64UWithWidth(&format[6], PH_TICKS_PARTIAL_MS(Ticks), 3);
+
+            return PhFormatToBuffer(format, RTL_NUMBER_OF(format), Buffer, BufferLength, ReturnLength);
+        }
         break;
     case PH_TIMESPAN_DHMS:
-        _snwprintf_s(
-            Destination,
-            PH_TIMESPAN_STR_LEN,
-            _TRUNCATE,
-            L"%I64u:%02I64u:%02I64u:%02I64u",
-            PH_TICKS_PARTIAL_DAYS(Ticks),
-            PH_TICKS_PARTIAL_HOURS(Ticks),
-            PH_TICKS_PARTIAL_MIN(Ticks),
-            PH_TICKS_PARTIAL_SEC(Ticks)
-            );
+        {
+            PH_FORMAT format[7];
+
+            // %I64u:%02I64u:%02I64u:%02I64u
+            PhInitFormatI64U(&format[0], PH_TICKS_PARTIAL_DAYS(Ticks));
+            PhInitFormatC(&format[1], L':');
+            PhInitFormatI64UWithWidth(&format[2], PH_TICKS_PARTIAL_HOURS(Ticks), 2);
+            PhInitFormatC(&format[3], L':');
+            PhInitFormatI64UWithWidth(&format[4], PH_TICKS_PARTIAL_MIN(Ticks), 2);
+            PhInitFormatC(&format[5], L':');
+            PhInitFormatI64UWithWidth(&format[6], PH_TICKS_PARTIAL_SEC(Ticks), 2);
+
+            return PhFormatToBuffer(format, RTL_NUMBER_OF(format), Buffer, BufferLength, ReturnLength);
+        }
         break;
     default:
-        _snwprintf_s(
-            Destination,
-            PH_TIMESPAN_STR_LEN,
-            _TRUNCATE,
-            L"%02I64u:%02I64u:%02I64u",
-            PH_TICKS_PARTIAL_HOURS(Ticks),
-            PH_TICKS_PARTIAL_MIN(Ticks),
-            PH_TICKS_PARTIAL_SEC(Ticks)
-            );
+        {
+            PH_FORMAT format[5];
+
+            // %02I64u:%02I64u:%02I64u
+            PhInitFormatI64UWithWidth(&format[0], PH_TICKS_PARTIAL_HOURS(Ticks), 2);
+            PhInitFormatC(&format[1], L':');
+            PhInitFormatI64UWithWidth(&format[2], PH_TICKS_PARTIAL_MIN(Ticks), 2);
+            PhInitFormatC(&format[3], L'.');
+            PhInitFormatI64UWithWidth(&format[4], PH_TICKS_PARTIAL_SEC(Ticks), 2);
+
+            return PhFormatToBuffer(format, RTL_NUMBER_OF(format), Buffer, BufferLength, ReturnLength);
+        }
         break;
     }
+
+    return FALSE;
 }
 
 /**
@@ -6044,6 +6111,15 @@ VOID PhFillMemoryUlong(
     _In_ SIZE_T Count
     )
 {
+#ifdef _ARM64_
+    if (Count != 0)
+    {
+        do
+        {
+            *Memory++ = Value;
+        } while (--Count != 0);
+    }
+#else
     __m128i pattern;
     SIZE_T count;
 
@@ -6112,6 +6188,7 @@ VOID PhFillMemoryUlong(
         *Memory++ = Value;
         break;
     }
+#endif
 }
 
 /**
@@ -6127,6 +6204,10 @@ VOID PhDivideSinglesBySingle(
     _In_ SIZE_T Count
     )
 {
+#ifdef _ARM64_
+    while (Count--)
+        *A++ /= B;
+#else
     PFLOAT endA;
     __m128 b;
 
@@ -6196,4 +6277,5 @@ VOID PhDivideSinglesBySingle(
         *A++ /= B;
         break;
     }
+#endif
 }

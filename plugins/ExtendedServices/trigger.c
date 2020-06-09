@@ -3,6 +3,7 @@
  *   trigger editor
  *
  * Copyright (C) 2011-2015 wj32
+ * Copyright (C) 2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -21,6 +22,7 @@
  */
 
 #include "extsrv.h"
+#include <hndlinfo.h>
 
 typedef struct _ES_TRIGGER_DATA
 {
@@ -370,175 +372,93 @@ VOID EsDestroyServiceTriggerContext(
     PhFree(Context);
 }
 
-PPH_STRING EspLookupEtwPublisherName(
-    _In_ PGUID Guid
+BOOLEAN NTAPI EspEtwPublishersEnumerateKeyCallback(
+    _In_ HANDLE RootDirectory,
+    _In_ PKEY_BASIC_INFORMATION Information,
+    _In_opt_ PVOID Context
     )
 {
-    PPH_STRING guidString;
-    PPH_STRING keyName;
+    PH_STRINGREF keyName;
     HANDLE keyHandle;
-    PPH_STRING publisherName = NULL;
+    GUID guid;
+    PPH_STRING publisherName;
 
-    // Copied from ProcessHacker\hndlinfo.c.
+    keyName.Buffer = Information->Name;
+    keyName.Length = Information->NameLength;
 
-    guidString = PhFormatGuid(Guid);
-
-    keyName = PhConcatStringRef2(&PublishersKeyName, &guidString->sr);
-
-    if (NT_SUCCESS(PhOpenKey(
-        &keyHandle,
-        KEY_READ,
-        PH_KEY_LOCAL_MACHINE,
-        &keyName->sr,
-        0
-        )))
+    // Make sure this is a valid publisher key. (wj32)
+    if (NT_SUCCESS(PhStringToGuid(&keyName, &guid)))
     {
-        publisherName = PhQueryRegistryString(keyHandle, NULL);
-
-        if (publisherName && publisherName->Length == 0)
+        if (NT_SUCCESS(PhOpenKey(
+            &keyHandle,
+            KEY_READ,
+            RootDirectory,
+            &keyName,
+            0
+            )))
         {
-            PhDereferenceObject(publisherName);
-            publisherName = NULL;
+            publisherName = PhQueryRegistryString(keyHandle, NULL);
+
+            if (publisherName)
+            {
+                if (publisherName->Length != 0)
+                {
+                    ETW_PUBLISHER_ENTRY entry;
+
+                    PhSetReference(&entry.PublisherName, publisherName);
+                    memcpy_s(&entry.Guid, sizeof(entry.Guid), &guid, sizeof(GUID));
+
+                    PhAddItemArray(Context, &entry);
+                }
+                else
+                {
+                    PhDereferenceObject(publisherName);
+                }
+            }
+
+            NtClose(keyHandle);
         }
-
-        NtClose(keyHandle);
     }
 
-    PhDereferenceObject(keyName);
-
-    if (publisherName)
-    {
-        PhDereferenceObject(guidString);
-        return publisherName;
-    }
-    else
-    {
-        return guidString;
-    }
+    return TRUE;
 }
 
-BOOLEAN EspEnumerateEtwPublishers(
+NTSTATUS EspEnumerateEtwPublishers(
     _Out_ PETW_PUBLISHER_ENTRY *Entries,
     _Out_ PULONG NumberOfEntries
     )
 {
     NTSTATUS status;
     HANDLE publishersKeyHandle;
-    ULONG index;
-    PKEY_BASIC_INFORMATION buffer;
-    ULONG bufferSize;
-    PETW_PUBLISHER_ENTRY entries;
-    ULONG numberOfEntries;
-    ULONG allocatedEntries;
+    PH_ARRAY publishersArrayList;
 
-    if (!NT_SUCCESS(PhOpenKey(
+    status = PhOpenKey(
         &publishersKeyHandle,
         KEY_READ,
         PH_KEY_LOCAL_MACHINE,
         &PublishersKeyName,
         0
-        )))
-    {
-        return FALSE;
-    }
+        );
 
-    numberOfEntries = 0;
-    allocatedEntries = 256;
-    entries = PhAllocate(allocatedEntries * sizeof(ETW_PUBLISHER_ENTRY));
+    if (!NT_SUCCESS(status))
+        return status;
 
-    index = 0;
-    bufferSize = 0x100;
-    buffer = PhAllocate(0x100);
-
-    while (TRUE)
-    {
-        status = NtEnumerateKey(
-            publishersKeyHandle,
-            index,
-            KeyBasicInformation,
-            buffer,
-            bufferSize,
-            &bufferSize
-            );
-
-        if (NT_SUCCESS(status))
-        {
-            UNICODE_STRING nameUs;
-            PH_STRINGREF name;
-            HANDLE keyHandle;
-            GUID guid;
-            PPH_STRING publisherName;
-
-            nameUs.Buffer = buffer->Name;
-            nameUs.Length = (USHORT)buffer->NameLength;
-            name.Buffer = buffer->Name;
-            name.Length = buffer->NameLength;
-
-            // Make sure this is a valid publisher key.
-            if (NT_SUCCESS(RtlGUIDFromString(&nameUs, &guid)))
-            {
-                if (NT_SUCCESS(PhOpenKey(
-                    &keyHandle,
-                    KEY_READ,
-                    publishersKeyHandle,
-                    &name,
-                    0
-                    )))
-                {
-                    publisherName = PhQueryRegistryString(keyHandle, NULL);
-
-                    if (publisherName)
-                    {
-                        if (publisherName->Length != 0)
-                        {
-                            PETW_PUBLISHER_ENTRY entry;
-
-                            if (numberOfEntries == allocatedEntries)
-                            {
-                                allocatedEntries *= 2;
-                                entries = PhReAllocate(entries, allocatedEntries * sizeof(ETW_PUBLISHER_ENTRY));
-                            }
-
-                            entry = &entries[numberOfEntries++];
-                            entry->PublisherName = publisherName;
-                            entry->Guid = guid;
-                        }
-                        else
-                        {
-                            PhDereferenceObject(publisherName);
-                        }
-                    }
-
-                    NtClose(keyHandle);
-                }
-            }
-
-            index++;
-        }
-        else if (status == STATUS_NO_MORE_ENTRIES)
-        {
-            break;
-        }
-        else if (status == STATUS_BUFFER_OVERFLOW || status == STATUS_BUFFER_TOO_SMALL)
-        {
-            PhFree(buffer);
-            buffer = PhAllocate(bufferSize);
-        }
-        else
-        {
-            break;
-        }
-    }
-
-    PhFree(buffer);
+    PhInitializeArray(&publishersArrayList, sizeof(ETW_PUBLISHER_ENTRY), 100);
+    PhEnumerateKey(
+        publishersKeyHandle,
+        KeyBasicInformation,
+        EspEtwPublishersEnumerateKeyCallback,
+        &publishersArrayList
+        );
     NtClose(publishersKeyHandle);
 
-    *Entries = entries;
-    *NumberOfEntries = numberOfEntries;
+    *Entries = PhFinalArrayItems(&publishersArrayList);
+    *NumberOfEntries = (ULONG)publishersArrayList.Count;
 
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
+_Success_(return)
 BOOLEAN EspLookupEtwPublisherGuid(
     _In_ PPH_STRINGREF PublisherName,
     _Out_ PGUID Guid
@@ -549,7 +469,7 @@ BOOLEAN EspLookupEtwPublisherGuid(
     ULONG numberOfEntries;
     ULONG i;
 
-    if (!EspEnumerateEtwPublishers(&entries, &numberOfEntries))
+    if (!NT_SUCCESS(EspEnumerateEtwPublishers(&entries, &numberOfEntries)))
         return FALSE;
 
     result = FALSE;
@@ -624,8 +544,8 @@ VOID EspFormatTriggerInfo(
             {
                 PPH_STRING publisherName;
 
-                // Try to lookup the publisher name from the GUID.
-                publisherName = EspLookupEtwPublisherName(Info->Subtype);
+                // Try to lookup the publisher name from the GUID. (wj32)
+                publisherName = PhGetEtwPublisherName(Info->Subtype);
                 stringUsed = PhConcatStrings2(L"Custom: ", publisherName->Buffer);
                 PhDereferenceObject(publisherName);
                 triggerString = stringUsed->Buffer;
@@ -926,7 +846,7 @@ VOID EsHandleEventServiceTrigger(
             PES_TRIGGER_INFO info;
             ULONG index;
 
-            lvItemIndex = ListView_GetNextItem(Context->TriggersLv, -1, LVNI_SELECTED);
+            lvItemIndex = PhFindListViewItemByFlags(Context->TriggersLv, -1, LVNI_SELECTED);
 
             if (lvItemIndex != -1 && PhGetListViewItemParam(Context->TriggersLv, lvItemIndex, (PVOID *)&info))
             {
@@ -977,7 +897,7 @@ VOID EsHandleEventServiceTrigger(
             PES_TRIGGER_INFO info;
             ULONG index;
 
-            lvItemIndex = ListView_GetNextItem(Context->TriggersLv, -1, LVNI_SELECTED);
+            lvItemIndex = PhFindListViewItemByFlags(Context->TriggersLv, -1, LVNI_SELECTED);
 
             if (lvItemIndex != -1 && PhGetListViewItemParam(Context->TriggersLv, lvItemIndex, (PVOID *)&info))
             {
@@ -1079,7 +999,7 @@ VOID EspFixServiceTriggerControls(
                 ComboBox_AddString(subTypeComboBox, L"Custom");
 
                 // Display a list of publishers.
-                if (EspEnumerateEtwPublishers(&entries, &numberOfEntries))
+                if (NT_SUCCESS(EspEnumerateEtwPublishers(&entries, &numberOfEntries)))
                 {
                     // Sort the list by name.
                     qsort(entries, numberOfEntries, sizeof(ETW_PUBLISHER_ENTRY), EtwPublisherByNameCompareFunction);
@@ -1161,7 +1081,7 @@ PPH_STRING EspConvertNewLinesToNulls(
     SIZE_T count;
     SIZE_T i;
 
-    text = PhCreateStringEx(NULL, String->Length + 2); // plus one character for an extra null terminator (see below)
+    text = PhCreateStringEx(NULL, String->Length + sizeof(UNICODE_NULL)); // plus one character for an extra null terminator (see below)
     text->Length = 0;
     count = 0;
 
@@ -1175,7 +1095,7 @@ PPH_STRING EspConvertNewLinesToNulls(
 
         if (String->Buffer[i] == '\n')
         {
-            text->Buffer[count++] = 0;
+            text->Buffer[count++] = UNICODE_NULL;
             continue;
         }
 
@@ -1185,11 +1105,11 @@ PPH_STRING EspConvertNewLinesToNulls(
     if (count != 0)
     {
         // Make sure we have an extra null terminator at the end, as required of multistrings.
-        if (text->Buffer[count - 1] != 0)
-            text->Buffer[count++] = 0;
+        if (text->Buffer[count - 1] != UNICODE_NULL)
+            text->Buffer[count++] = UNICODE_NULL;
     }
 
-    text->Length = count * 2;
+    text->Length = count * sizeof(WCHAR);
 
     return text;
 }
@@ -1203,9 +1123,9 @@ PPH_STRING EspConvertNullsToSpaces(
 
     text = PhDuplicateString(String);
 
-    for (j = 0; j < text->Length / 2; j++)
+    for (j = 0; j < text->Length / sizeof(WCHAR); j++)
     {
-        if (text->Buffer[j] == 0)
+        if (text->Buffer[j] == UNICODE_NULL)
             text->Buffer[j] = ' ';
     }
 
@@ -1334,8 +1254,8 @@ INT_PTR CALLBACK EspServiceTriggerDlgProc(
                 {
                     PPH_STRING publisherName;
 
-                    // Try to select the publisher name in the subtype list.
-                    publisherName = EspLookupEtwPublisherName(context->EditingInfo->Subtype);
+                    // Try to select the publisher name in the subtype list. (wj32)
+                    publisherName = PhGetEtwPublisherName(context->EditingInfo->Subtype);
                     PhSelectComboBoxString(GetDlgItem(hwndDlg, IDC_SUBTYPE), publisherName->Buffer, FALSE);
                     PhDereferenceObject(publisherName);
                 }
@@ -1436,7 +1356,7 @@ INT_PTR CALLBACK EspServiceTriggerDlgProc(
                     ULONG index;
 
                     lvHandle = GetDlgItem(hwndDlg, IDC_LIST);
-                    lvItemIndex = ListView_GetNextItem(lvHandle, -1, LVNI_SELECTED);
+                    lvItemIndex = PhFindListViewItemByFlags(lvHandle, -1, LVNI_SELECTED);
 
                     if (
                         lvItemIndex != -1 && PhGetListViewItemParam(lvHandle, lvItemIndex, (PVOID *)&data) &&
@@ -1445,7 +1365,7 @@ INT_PTR CALLBACK EspServiceTriggerDlgProc(
                     {
                         index = PhFindItemList(context->EditingInfo->DataList, data);
 
-                        if (index != -1)
+                        if (index != ULONG_MAX)
                         {
                             context->EditingValue = EspConvertNullsToNewLines(data->String);
 
@@ -1479,13 +1399,13 @@ INT_PTR CALLBACK EspServiceTriggerDlgProc(
                     ULONG index;
 
                     lvHandle = GetDlgItem(hwndDlg, IDC_LIST);
-                    lvItemIndex = ListView_GetNextItem(lvHandle, -1, LVNI_SELECTED);
+                    lvItemIndex = PhFindListViewItemByFlags(lvHandle, -1, LVNI_SELECTED);
 
                     if (lvItemIndex != -1 && PhGetListViewItemParam(lvHandle, lvItemIndex, (PVOID *)&data))
                     {
                         index = PhFindItemList(context->EditingInfo->DataList, data);
 
-                        if (index != -1)
+                        if (index != ULONG_MAX)
                         {
                             EspDestroyTriggerData(data);
                             PhRemoveItemList(context->EditingInfo->DataList, index);
@@ -1558,15 +1478,15 @@ INT_PTR CALLBACK EspServiceTriggerDlgProc(
 
                         // Trim whitespace.
 
-                        while (guidString.Length != 0 && *guidString.Buffer == ' ')
+                        while (guidString.Length != 0 && *guidString.Buffer == L' ')
                         {
                             guidString.Buffer++;
-                            guidString.Length -= 2;
+                            guidString.Length -= sizeof(WCHAR);
                         }
 
-                        while (guidString.Length != 0 && guidString.Buffer[guidString.Length / 2 - 1] == ' ')
+                        while (guidString.Length != 0 && guidString.Buffer[guidString.Length / sizeof(WCHAR) - 1] == L' ')
                         {
-                            guidString.Length -= 2;
+                            guidString.Length -= sizeof(WCHAR);
                         }
 
                         if (NT_SUCCESS(RtlGUIDFromString(&guidString, &context->EditingInfo->SubtypeBuffer)))

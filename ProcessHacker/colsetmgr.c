@@ -42,7 +42,7 @@ PPH_LIST PhInitializeColumnSetList(
 
     if (remaining.Length == 0)
         goto CleanupExit;
-    if (!PhSplitStringRefAtChar(&remaining, '-', &part, &remaining))
+    if (!PhSplitStringRefAtChar(&remaining, L'-', &part, &remaining))
         goto CleanupExit;
     if (!PhStringToInteger64(&part, 10, &count))
         goto CleanupExit;
@@ -56,9 +56,9 @@ PPH_LIST PhInitializeColumnSetList(
         if (remaining.Length == 0)
             break;
 
-        PhSplitStringRefAtChar(&remaining, '-', &columnSetNamePart, &remaining);
-        PhSplitStringRefAtChar(&remaining, '-', &columnSetSettingPart, &remaining);
-        PhSplitStringRefAtChar(&remaining, '-', &columnSetSortPart, &remaining);
+        PhSplitStringRefAtChar(&remaining, L'-', &columnSetNamePart, &remaining);
+        PhSplitStringRefAtChar(&remaining, L'-', &columnSetSettingPart, &remaining);
+        PhSplitStringRefAtChar(&remaining, L'-', &columnSetSortPart, &remaining);
 
         {
             PPH_COLUMN_SET_ENTRY entry;
@@ -157,7 +157,7 @@ BOOLEAN PhLoadSettingsColumnSet(
     if (remaining.Length == 0)
         return FALSE;
 
-    if (!PhSplitStringRefAtChar(&remaining, '-', &part, &remaining))
+    if (!PhSplitStringRefAtChar(&remaining, L'-', &part, &remaining))
         return FALSE;
     if (!PhStringToInteger64(&part, 10, &count))
         return FALSE;
@@ -171,9 +171,9 @@ BOOLEAN PhLoadSettingsColumnSet(
         if (remaining.Length == 0)
             break;
 
-        PhSplitStringRefAtChar(&remaining, '-', &columnSetNamePart, &remaining);
-        PhSplitStringRefAtChar(&remaining, '-', &columnSetSettingPart, &remaining);
-        PhSplitStringRefAtChar(&remaining, '-', &columnSetSortPart, &remaining);
+        PhSplitStringRefAtChar(&remaining, L'-', &columnSetNamePart, &remaining);
+        PhSplitStringRefAtChar(&remaining, L'-', &columnSetSettingPart, &remaining);
+        PhSplitStringRefAtChar(&remaining, L'-', &columnSetSortPart, &remaining);
 
         if (PhEqualStringRef(&columnSetNamePart, &ColumnSetName->sr, FALSE))
         {
@@ -330,7 +330,7 @@ VOID PhpMoveSelectedListViewItemUp(
 {
     INT lvItemIndex;
 
-    lvItemIndex = ListView_GetNextItem(ListViewHandle, -1, LVNI_SELECTED);
+    lvItemIndex = PhFindListViewItemByFlags(ListViewHandle, -1, LVNI_SELECTED);
 
     if (lvItemIndex != -1)
     {
@@ -348,7 +348,7 @@ VOID PhpMoveSelectedListViewItemDown(
 {
     INT lvItemIndex;
 
-    lvItemIndex = ListView_GetNextItem(ListViewHandle, -1, LVNI_SELECTED);
+    lvItemIndex = PhFindListViewItemByFlags(ListViewHandle, -1, LVNI_SELECTED);
 
     if (lvItemIndex != -1)
     {
@@ -448,7 +448,7 @@ INT_PTR CALLBACK PhpColumnSetEditorDlgProc(
                 {
                     INT lvItemIndex;
 
-                    lvItemIndex = ListView_GetNextItem(context->ListViewHandle, -1, LVNI_SELECTED);
+                    lvItemIndex = PhFindListViewItemByFlags(context->ListViewHandle, -1, LVNI_SELECTED);
 
                     if (lvItemIndex != -1)
                     {
@@ -465,13 +465,13 @@ INT_PTR CALLBACK PhpColumnSetEditorDlgProc(
 
                     PhpMoveSelectedListViewItemUp(context->ListViewHandle);
 
-                    lvItemIndex = ListView_GetNextItem(context->ListViewHandle, -1, LVNI_SELECTED);
+                    lvItemIndex = PhFindListViewItemByFlags(context->ListViewHandle, -1, LVNI_SELECTED);
 
                     if (lvItemIndex != -1 && PhGetListViewItemParam(context->ListViewHandle, lvItemIndex, (PVOID *)&entry))
                     {
                         index = PhFindItemList(context->ColumnSetList, entry);
 
-                        if (index != -1)
+                        if (index != ULONG_MAX)
                         {
                             PhRemoveItemList(context->ColumnSetList, index);
                             PhInsertItemList(context->ColumnSetList, lvItemIndex, entry);   
@@ -487,13 +487,13 @@ INT_PTR CALLBACK PhpColumnSetEditorDlgProc(
 
                     PhpMoveSelectedListViewItemDown(context->ListViewHandle);
 
-                    lvItemIndex = ListView_GetNextItem(context->ListViewHandle, -1, LVNI_SELECTED);
+                    lvItemIndex = PhFindListViewItemByFlags(context->ListViewHandle, -1, LVNI_SELECTED);
 
                     if (lvItemIndex != -1 && PhGetListViewItemParam(context->ListViewHandle, lvItemIndex, (PVOID *)&entry))
                     {
                         index = PhFindItemList(context->ColumnSetList, entry);
 
-                        if (index != -1)
+                        if (index != ULONG_MAX)
                         {
                             PhRemoveItemList(context->ColumnSetList, index);
                             PhInsertItemList(context->ColumnSetList, lvItemIndex, entry);
@@ -507,13 +507,13 @@ INT_PTR CALLBACK PhpColumnSetEditorDlgProc(
                     PPH_COLUMN_SET_ENTRY entry;
                     ULONG index;
 
-                    lvItemIndex = ListView_GetNextItem(context->ListViewHandle, -1, LVNI_SELECTED);
+                    lvItemIndex = PhFindListViewItemByFlags(context->ListViewHandle, -1, LVNI_SELECTED);
 
                     if (lvItemIndex != -1 && PhGetListViewItemParam(context->ListViewHandle, lvItemIndex, (PVOID *)&entry))
                     {
                         index = PhFindItemList(context->ColumnSetList, entry);
 
-                        if (index != -1)
+                        if (index != ULONG_MAX)
                         {
                             PhRemoveItemList(context->ColumnSetList, index);
                             PhRemoveListViewItem(context->ListViewHandle, lvItemIndex);
@@ -543,7 +543,7 @@ INT_PTR CALLBACK PhpColumnSetEditorDlgProc(
                 {
                     INT lvItemIndex;
 
-                    lvItemIndex = ListView_GetNextItem(context->ListViewHandle, -1, LVNI_SELECTED);
+                    lvItemIndex = PhFindListViewItemByFlags(context->ListViewHandle, -1, LVNI_SELECTED);
 
                     if (lvItemIndex != -1)
                     {
@@ -560,7 +560,7 @@ INT_PTR CALLBACK PhpColumnSetEditorDlgProc(
                     INT count;
 
                     index = listview->iItem;
-                    lvItemIndex = ListView_GetNextItem(context->ListViewHandle, -1, LVNI_SELECTED);
+                    lvItemIndex = PhFindListViewItemByFlags(context->ListViewHandle, -1, LVNI_SELECTED);
                     count = ListView_GetItemCount(context->ListViewHandle);
 
                     if (count == 0 || index == -1 || lvItemIndex == -1)

@@ -402,9 +402,17 @@ BOOLEAN NTAPI PhpGetImageBaseCallback(
     )
 {
     PPHP_GET_IMAGE_BASE_CONTEXT context = Context;
+    PH_STRINGREF fullDllName;
+    PH_STRINGREF baseDllName;
 
-    if (RtlEqualUnicodeString(&Module->FullDllName, &context->ImagePath, TRUE) ||
-        RtlEqualUnicodeString(&Module->BaseDllName, &context->ImagePath, TRUE))
+    if (!context)
+        return TRUE;
+
+    PhUnicodeStringToStringRef(&Module->FullDllName, &fullDllName);
+    PhUnicodeStringToStringRef(&Module->BaseDllName, &baseDllName);
+
+    if (PhEqualStringRef(&fullDllName, &context->ImagePath, TRUE) ||
+        PhEqualStringRef(&baseDllName, &context->ImagePath, TRUE))
     {
         context->BaseAddress = Module->DllBase;
         return FALSE;
@@ -422,7 +430,7 @@ HRESULT STDMETHODCALLTYPE DnCLRDataTarget_GetImageBase(
     DnCLRDataTarget *this = (DnCLRDataTarget *)This;
     PHP_GET_IMAGE_BASE_CONTEXT context;
 
-    RtlInitUnicodeString(&context.ImagePath, (PWSTR)imagePath);
+    PhInitializeStringRefLongHint(&context.ImagePath, (PWSTR)imagePath);
     context.BaseAddress = NULL;
     PhEnumProcessModules(this->ProcessHandle, PhpGetImageBaseCallback, &context);
 
@@ -542,7 +550,7 @@ HRESULT STDMETHODCALLTYPE DnCLRDataTarget_GetThreadContext(
 
     if (NT_SUCCESS(status))
     {
-        memcpy(context, &buffer, sizeof(CONTEXT));
+        memcpy_s(context, contextSize, &buffer, sizeof(CONTEXT));
 
         return S_OK;
     }

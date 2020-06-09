@@ -85,7 +85,7 @@ VOID PhpAppendStringWithLineBreaks(
 
         if (afterFirstLine)
         {
-            PhAppendCharStringBuilder(StringBuilder, '\n');
+            PhAppendCharStringBuilder(StringBuilder, L'\n');
 
             if (IndentAfterFirstLine)
                 PhAppendStringBuilder(StringBuilder, IndentAfterFirstLine);
@@ -128,7 +128,7 @@ PPH_STRING PhGetProcessTooltipText(
         // This is necessary because the tooltip control seems to use some kind of O(n^9999) word-wrapping
         // algorithm.
         PhpAppendStringWithLineBreaks(&stringBuilder, &tempString->sr, 100, NULL);
-        PhAppendCharStringBuilder(&stringBuilder, '\n');
+        PhAppendCharStringBuilder(&stringBuilder, L'\n');
 
         PhDereferenceObject(tempString);
     }
@@ -136,7 +136,7 @@ PPH_STRING PhGetProcessTooltipText(
     // File information
 
     tempString = PhFormatImageVersionInfo(
-        Process->FileName,
+        Process->FileNameWin32,
         &Process->VersionInfo,
         &StandardIndent,
         0
@@ -146,7 +146,7 @@ PPH_STRING PhGetProcessTooltipText(
     {
         PhAppendStringBuilder2(&stringBuilder, L"File:\n");
         PhAppendStringBuilder(&stringBuilder, &tempString->sr);
-        PhAppendCharStringBuilder(&stringBuilder, '\n');
+        PhAppendCharStringBuilder(&stringBuilder, L'\n');
     }
 
     if (tempString)
@@ -169,7 +169,7 @@ PPH_STRING PhGetProcessTooltipText(
             case ServiceHostProcessType:
                 PhAppendStringBuilder2(&stringBuilder, L"Service group name:\n    ");
                 PhAppendStringBuilder(&stringBuilder, &knownCommandLine.ServiceHost.GroupName->sr);
-                PhAppendCharStringBuilder(&stringBuilder, '\n');
+                PhAppendCharStringBuilder(&stringBuilder, L'\n');
                 break;
             case RunDllAsAppProcessType:
                 {
@@ -191,7 +191,7 @@ PPH_STRING PhGetProcessTooltipText(
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"Run DLL target file:\n");
                             PhAppendStringBuilder(&stringBuilder, &tempString->sr);
-                            PhAppendCharStringBuilder(&stringBuilder, '\n');
+                            PhAppendCharStringBuilder(&stringBuilder, L'\n');
                         }
 
                         if (tempString)
@@ -212,7 +212,7 @@ PPH_STRING PhGetProcessTooltipText(
                     {
                         PhAppendStringBuilder(&stringBuilder, &StandardIndent);
                         PhAppendStringBuilder(&stringBuilder, &knownCommandLine.ComSurrogate.Name->sr);
-                        PhAppendCharStringBuilder(&stringBuilder, '\n');
+                        PhAppendCharStringBuilder(&stringBuilder, L'\n');
                     }
 
                     if (guidString = PhFormatGuid(&knownCommandLine.ComSurrogate.Guid))
@@ -220,7 +220,7 @@ PPH_STRING PhGetProcessTooltipText(
                         PhAppendStringBuilder(&stringBuilder, &StandardIndent);
                         PhAppendStringBuilder(&stringBuilder, &guidString->sr);
                         PhDereferenceObject(guidString);
-                        PhAppendCharStringBuilder(&stringBuilder, '\n');
+                        PhAppendCharStringBuilder(&stringBuilder, L'\n');
                     }
 
                     if (knownCommandLine.ComSurrogate.FileName && PhInitializeImageVersionInfo(
@@ -239,7 +239,7 @@ PPH_STRING PhGetProcessTooltipText(
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"COM target file:\n");
                             PhAppendStringBuilder(&stringBuilder, &tempString->sr);
-                            PhAppendCharStringBuilder(&stringBuilder, '\n');
+                            PhAppendCharStringBuilder(&stringBuilder, L'\n');
                         }
 
                         if (tempString)
@@ -397,7 +397,7 @@ PPH_STRING PhGetProcessTooltipText(
 
         PhInitializeStringBuilder(&notes, 40);
 
-        if (Process->FileName)
+        if (Process->FileNameWin32)
         {
             if (Process->VerifyResult == VrTrusted)
             {
@@ -527,7 +527,7 @@ VOID PhpFillUmdfDrivers(
 
             while (remainingPart.Length != 0)
             {
-                PhSplitStringRefAtChar(&remainingPart, ';', &part, &remainingPart);
+                PhSplitStringRefAtChar(&remainingPart, L';', &part, &remainingPart);
 
                 if (part.Length != 0)
                 {
@@ -553,7 +553,7 @@ VOID PhpFillUmdfDrivers(
                             PH_STRINGREF firstPart;
                             PH_STRINGREF secondPart;
 
-                            if (PhSplitStringRefAtLastChar(&deviceDesc->sr, ';', &firstPart, &secondPart))
+                            if (PhSplitStringRefAtLastChar(&deviceDesc->sr, L';', &firstPart, &secondPart))
                                 deviceName = secondPart;
                             else
                                 deviceName = deviceDesc->sr;
@@ -576,11 +576,11 @@ VOID PhpFillUmdfDrivers(
                             {
                                 PhAppendStringBuilder2(Drivers, L" (");
                                 PhAppendStringBuilder(Drivers, &hardwareId->sr);
-                                PhAppendCharStringBuilder(Drivers, ')');
+                                PhAppendCharStringBuilder(Drivers, L')');
                             }
                         }
 
-                        PhAppendCharStringBuilder(Drivers, '\n');
+                        PhAppendCharStringBuilder(Drivers, L'\n');
 
                         PhClearReference(&hardwareId);
                         PhClearReference(&deviceDesc);
@@ -610,10 +610,9 @@ VOID PhpFillRunningTasks(
 
     ITaskService *taskService;
 
-    if (SUCCEEDED(CoCreateInstance(
-        &CLSID_TaskScheduler_I,
-        NULL,
-        CLSCTX_INPROC_SERVER,
+    if (SUCCEEDED(PhGetClassObject(
+        L"taskschd.dll",
+        &CLSID_TaskScheduler,
         &IID_ITaskService_I,
         &taskService
         )))
@@ -796,7 +795,7 @@ PPH_STRING PhGetServiceTooltipText(
                 {
                     PhAppendStringBuilder2(&stringBuilder, L"File:\n");
                     PhAppendStringBuilder(&stringBuilder, &versionInfoText->sr);
-                    PhAppendCharStringBuilder(&stringBuilder, '\n');
+                    PhAppendCharStringBuilder(&stringBuilder, L'\n');
                 }
 
                 PhClearReference(&versionInfoText);
@@ -812,7 +811,7 @@ PPH_STRING PhGetServiceTooltipText(
         {
             PhAppendStringBuilder2(&stringBuilder, L"Description:\n    ");
             PhAppendStringBuilder(&stringBuilder, &description->sr);
-            PhAppendCharStringBuilder(&stringBuilder, '\n');
+            PhAppendCharStringBuilder(&stringBuilder, L'\n');
             PhDereferenceObject(description);
         }
 

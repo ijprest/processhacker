@@ -116,7 +116,8 @@ typedef union _TOOLSTATUS_CONFIG
         ULONG ModernIcons : 1;
         ULONG AutoHideMenu : 1;
         ULONG Reserved : 4;
-        ULONG Spare : 21;
+        ULONG SearchAutoFocus : 1;
+        ULONG Spare : 20;
     };
 } TOOLSTATUS_CONFIG;
 
@@ -416,6 +417,7 @@ typedef struct _CUSTOMIZE_CONTEXT
     HBRUSH BrushNormal;
     HBRUSH BrushPushed;
     HBRUSH BrushHot;
+    COLORREF TextColor;
     INT CXWidth;
     INT ImageWidth;
     INT ImageHeight;

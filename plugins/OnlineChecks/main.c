@@ -55,7 +55,7 @@ VOID ProcessesUpdatedCallback(
     if (!VirusTotalScanningEnabled)
         return;
 
-    if (ProcessesUpdatedCount < 2)
+    if (ProcessesUpdatedCount != 3)
     {
         ProcessesUpdatedCount++;
         return;
@@ -72,7 +72,7 @@ VOID ProcessesUpdatedCallback(
 
         if (extension->ProcessItem)
         {
-            filePath = extension->ProcessItem->FileName;
+            filePath = extension->ProcessItem->FileNameWin32;
         }
         else if (extension->ModuleItem)
         {
@@ -109,7 +109,7 @@ VOID ProcessesUpdatedCallback(
             {
                 PPROCESS_DB_OBJECT object;
 
-                if (object = FindProcessDbObject(&filePath->sr))
+                if (filePath && (object = FindProcessDbObject(&filePath->sr)))
                 {
                     extension->Stage1 = TRUE;
                     extension->ResultValid = TRUE;
@@ -121,7 +121,7 @@ VOID ProcessesUpdatedCallback(
 
             if (!extension->Stage1)
             {
-                if (!VirusTotalGetCachedResult(filePath))
+                if (filePath && !VirusTotalGetCachedResult(filePath))
                 {
                     VirusTotalAddCacheResult(filePath, extension);
                 }
@@ -343,7 +343,7 @@ VOID NTAPI ProcessMenuInitializingCallback(
     else
         processItem = NULL;
 
-    sendToMenu = CreateSendToMenu(TRUE, menuInfo->Menu, processItem ? processItem->FileName : NULL);
+    sendToMenu = CreateSendToMenu(TRUE, menuInfo->Menu, processItem ? processItem->FileNameWin32 : NULL);
 
     // Only enable the Send To menu if there is exactly one process selected and it has a file name.
     if (!processItem || !processItem->FileName)
@@ -412,22 +412,22 @@ VOID ProcessHighlightingColorCallback(
     _In_opt_ PVOID Context
     )
 {
-    PPH_PLUGIN_GET_HIGHLIGHTING_COLOR getHighlightingColor = Parameter;
-    PPH_PROCESS_ITEM processItem = (PPH_PROCESS_ITEM)getHighlightingColor->Parameter;
+    //PPH_PLUGIN_GET_HIGHLIGHTING_COLOR getHighlightingColor = Parameter;
+    //PPH_PROCESS_ITEM processItem = (PPH_PROCESS_ITEM)getHighlightingColor->Parameter;
     //PPROCESS_DB_OBJECT object;
 
-    if (getHighlightingColor->Handled)
-        return;
+    //if (getHighlightingColor->Handled)
+    //    return;
 
     //if (!PhGetIntegerSetting(SETTING_NAME_VIRUSTOTAL_HIGHLIGHT_DETECTIONS))
     //    return;
 
     //LockProcessDb();
 
-    //if (PhIsNullOrEmptyString(processItem->FileName))
+    //if (PhIsNullOrEmptyString(processItem->FileNameWin32))
     //    return;
 
-    //if ((object = FindProcessDbObject(&processItem->FileName->sr)) && object->Positives)
+    //if ((object = FindProcessDbObject(&processItem->FileNameWin32->sr)) && object->Positives)
     //{
     //    getHighlightingColor->BackColor = RGB(255, 0, 0);
     //    getHighlightingColor->Cache = TRUE;

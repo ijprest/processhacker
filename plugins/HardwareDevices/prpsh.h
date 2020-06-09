@@ -50,10 +50,6 @@ typedef struct _PV_PROPPAGECONTEXT
     BOOLEAN LayoutInitialized;
 } PV_PROPPAGECONTEXT, *PPV_PROPPAGECONTEXT;
 
-VOID HdPropInitialization(
-    VOID
-    );
-
 PPV_PROPCONTEXT HdCreatePropContext(
     _In_ PWSTR Caption
     );
@@ -81,14 +77,6 @@ PPV_PROPPAGECONTEXT PvCreatePropPageContextEx(
     _In_opt_ PVOID Context
     );
 
-BOOLEAN PvPropPageDlgProcHeader(
-    _In_ HWND hwndDlg,
-    _In_ UINT uMsg,
-    _In_ LPARAM lParam,
-    _Out_ LPPROPSHEETPAGE *PropSheetPage,
-    _Out_ PPV_PROPPAGECONTEXT *PropPageContext
-    );
-
 #define PH_PROP_PAGE_TAB_CONTROL_PARENT ((PPH_LAYOUT_ITEM)0x1)
 
 PPH_LAYOUT_ITEM PvAddPropPageLayoutItem(
@@ -102,8 +90,10 @@ VOID PvDoPropPageLayout(
     _In_ HWND hwnd
     );
 
-_Success_(return != FALSE)
-FORCEINLINE BOOLEAN PvPropPageDlgProcHeader(
+_Success_(return)
+FORCEINLINE
+BOOLEAN
+PvPropPageDlgProcHeader(
     _In_ HWND hwndDlg,
     _In_ UINT uMsg,
     _In_ LPARAM lParam,

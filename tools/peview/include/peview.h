@@ -3,7 +3,7 @@
  *   PE viewer
  *
  * Copyright (C) 2010-2011 wj32
- * Copyright (C) 2017 dmex
+ * Copyright (C) 2017-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -26,6 +26,7 @@
 
 #include <ph.h>
 #include <cpysave.h>
+#include <emenu.h>
 #include <guisup.h>
 #include <mapimg.h>
 #include <prsht.h>
@@ -88,8 +89,27 @@ PPH_STRING PvResolveShortcutTarget(
     _In_ PPH_STRING ShortcutFileName
     );
 
+PPH_STRING PvResolveReparsePointTarget(
+    _In_ PPH_STRING FileName
+    );
+
 VOID PvCopyListView(
     _In_ HWND ListViewHandle
+    );
+
+BOOLEAN PvHandleCopyListViewEMenuItem(
+    _In_ struct _PH_EMENU_ITEM* SelectedItem
+    );
+
+BOOLEAN PvInsertCopyListViewEMenuItem(
+    _In_ struct _PH_EMENU_ITEM* Menu,
+    _In_ ULONG InsertAfterId,
+    _In_ HWND ListViewHandle
+    );
+
+BOOLEAN PvGetListViewContextMenuPoint(
+    _In_ HWND ListViewHandle,
+    _Out_ PPOINT Point
     );
 
 VOID PvHandleListViewNotifyForCopy(
@@ -330,6 +350,13 @@ INT_PTR CALLBACK PvpPeLoadConfigDlgProc(
     _In_ LPARAM lParam
     );
 
+INT_PTR CALLBACK PvpPeDirectoryDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
 INT_PTR CALLBACK PvpPeClrDlgProc(
     _In_ HWND hwndDlg,
     _In_ UINT uMsg,
@@ -394,6 +421,20 @@ INT_PTR CALLBACK PvpPeTlsDlgProc(
     );
 
 INT_PTR CALLBACK PvpPePreviewDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK PvpPeProdIdDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK PvpPeDebugDlgProc(
     _In_ HWND hwndDlg,
     _In_ UINT uMsg,
     _In_ WPARAM wParam,

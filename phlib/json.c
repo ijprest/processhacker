@@ -92,6 +92,31 @@ PVOID PhGetJsonObject(
     return json_get_object(Object, Key);
 }
 
+PH_JSON_OBJECT_TYPE PhGetJsonObjectType(
+    _In_ PVOID Object
+    )
+{
+    switch (json_object_get_type(Object))
+    {
+    case json_type_null:
+        return PH_JSON_OBJECT_TYPE_NULL;
+    case json_type_boolean:
+        return PH_JSON_OBJECT_TYPE_BOOLEAN;
+    case json_type_double:
+        return PH_JSON_OBJECT_TYPE_DOUBLE;
+    case json_type_int:
+        return PH_JSON_OBJECT_TYPE_INT;
+    case json_type_object:
+        return PH_JSON_OBJECT_TYPE_OBJECT;
+    case json_type_array:
+        return PH_JSON_OBJECT_TYPE_ARRAY;
+    case json_type_string:
+        return PH_JSON_OBJECT_TYPE_STRING;
+    }
+
+    return PH_JSON_OBJECT_TYPE_UNKNOWN;
+}
+
 INT PhGetJsonObjectLength(
     _In_ PVOID Object
     )
@@ -114,6 +139,24 @@ VOID PhAddJsonObject(
     )
 {
     json_object_object_add(Object, Key, json_object_new_string(Value));
+}
+
+VOID PhAddJsonObjectInt64(
+    _In_ PVOID Object,
+    _In_ PSTR Key,
+    _In_ ULONGLONG Value
+    )
+{
+    json_object_object_add(Object, Key, json_object_new_int64(Value));
+}
+
+VOID PhAddJsonObjectDouble(
+    _In_ PVOID Object,
+    _In_ PSTR Key,
+    _In_ DOUBLE Value
+    )
+{
+    json_object_object_add(Object, Key, json_object_new_double(Value));
 }
 
 PVOID PhCreateJsonArray(

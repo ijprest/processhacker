@@ -88,11 +88,13 @@ NTSTATUS PhpProcessGeneralOpenProcess(
     _In_opt_ PVOID Context
     )
 {
-    return PhOpenProcess(Handle, DesiredAccess, (HANDLE)Context);
+    if (Context)
+        return PhOpenProcess(Handle, DesiredAccess, (HANDLE)Context);
+    return STATUS_UNSUCCESSFUL;
 }
 
 FORCEINLINE PWSTR PhpGetStringOrNa(
-    _In_ _Maybenull_ PPH_STRING String
+    _In_opt_ _Maybenull_ PPH_STRING String
     )
 {
     if (String)
@@ -195,6 +197,8 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
 
             SET_BUTTON_ICON(IDC_INSPECT, magnifier);
             SET_BUTTON_ICON(IDC_OPENFILENAME, folder);
+            SET_BUTTON_ICON(IDC_INSPECT2, magnifier);
+            SET_BUTTON_ICON(IDC_OPENFILENAME2, folder);
             SET_BUTTON_ICON(IDC_VIEWCOMMANDLINE, magnifier);
             SET_BUTTON_ICON(IDC_VIEWPARENTPROCESS, magnifier);
 
@@ -222,7 +226,8 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
             }
 
             PhSetDialogItemText(hwndDlg, IDC_VERSION, PhpGetStringOrNa(processItem->VersionInfo.FileVersion));
-            PhSetDialogItemText(hwndDlg, IDC_FILENAME, PhpGetStringOrNa(processItem->FileName));
+            PhSetDialogItemText(hwndDlg, IDC_FILENAME, PhpGetStringOrNa(processItem->FileNameWin32));
+            PhSetDialogItemText(hwndDlg, IDC_FILENAMEWIN32, PhpGetStringOrNa(processItem->FileName));
 
             {
                 PPH_STRING inspectExecutables;
@@ -234,7 +239,7 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
                 }
                 else
                 {
-                    if (!PhDoesFileExistsWin32(PhGetString(processItem->FileName)))
+                    if (!PhDoesFileExists(PhGetString(processItem->FileName)))
                     {
                         EnableWindow(GetDlgItem(hwndDlg, IDC_OPENFILENAME), FALSE);
                         EnableWindow(GetDlgItem(hwndDlg, IDC_INSPECT), FALSE);
@@ -296,23 +301,15 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
                 processItem->ProcessId
                 )))
             {
-                PH_PEB_OFFSET pebOffset;
-
-                pebOffset = PhpoCurrentDirectory;
-
-#ifdef _WIN64
-                // Tell the function to get the WOW64 current directory, because that's the one that
-                // actually gets updated.
-                if (processItem->IsWow64)
-                    pebOffset |= PhpoWow64;
-#endif
-
-                PhGetProcessPebString(
+                // Tell the function to get the WOW64 current directory, because that's the one that actually gets updated.
+                if (NT_SUCCESS(PhGetProcessCurrentDirectory(
                     processHandle,
-                    pebOffset,
+                    !!processItem->IsWow64,
                     &curDir
-                    );
-                PH_AUTO(curDir);
+                    )))
+                {
+                    PH_AUTO(curDir);
+                }
 
                 NtClose(processHandle);
                 processHandle = NULL;
@@ -383,15 +380,19 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
                 if (processItem->IsWow64)
                 {
                     PhGetProcessPeb32(processHandle, &peb32);
-                    PhSetDialogItemText(hwndDlg, IDC_PEBADDRESS,
-                        PhaFormatString(L"0x%Ix (32-bit: 0x%x)", basicInfo.PebBaseAddress, PtrToUlong(peb32))->Buffer);
+                    PhSetDialogItemText(hwndDlg, IDC_PEBADDRESS, PhaFormatString(
+                        L"0x%Ix (32-bit: 0x%x)",
+                        (ULONG_PTR)basicInfo.PebBaseAddress,
+                        PtrToUlong(peb32)
+                        )->Buffer);
                 }
                 else
                 {
 #endif
-
-                PhSetDialogItemText(hwndDlg, IDC_PEBADDRESS,
-                    PhaFormatString(L"0x%Ix", basicInfo.PebBaseAddress)->Buffer);
+                PhSetDialogItemText(hwndDlg, IDC_PEBADDRESS, PhaFormatString(
+                    L"0x%Ix",
+                    (ULONG_PTR)basicInfo.PebBaseAddress
+                    )->Buffer);
 #ifdef _WIN64
                 }
 #endif
@@ -438,6 +439,9 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
                 PhAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_FILENAME), dialogItem, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
                 PhAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_INSPECT), dialogItem, PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
                 PhAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_OPENFILENAME), dialogItem, PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
+                PhAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_FILENAMEWIN32), dialogItem, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
+                PhAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_INSPECT2), dialogItem, PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
+                PhAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_OPENFILENAME2), dialogItem, PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
                 PhAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_CMDLINE), dialogItem, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
                 PhAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_VIEWCOMMANDLINE), dialogItem, PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
                 PhAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_CURDIR), dialogItem, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
@@ -460,12 +464,12 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
             {
             case IDC_INSPECT:
                 {
-                    if (processItem->FileName)
+                    if (processItem->FileNameWin32)
                     {
                         PhShellExecuteUserString(
                             hwndDlg,
                             L"ProgramInspectExecutables",
-                            processItem->FileName->Buffer,
+                            processItem->FileNameWin32->Buffer,
                             FALSE,
                             L"Make sure the PE Viewer executable file is present."
                             );
@@ -474,12 +478,12 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
                 break;
             case IDC_OPENFILENAME:
                 {
-                    if (processItem->FileName)
+                    if (processItem->FileNameWin32)
                     {
                         PhShellExecuteUserString(
                             hwndDlg,
                             L"FileBrowseExecutable",
-                            processItem->FileName->Buffer,
+                            processItem->FileNameWin32->Buffer,
                             FALSE,
                             L"Make sure the Explorer executable file is present."
                             );
@@ -578,12 +582,12 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
                     {
                     case IDC_COMPANYNAME_LINK:
                         {
-                            if (processItem->FileName)
+                            if (processItem->FileNameWin32)
                             {
                                 PH_VERIFY_FILE_INFO info;
 
                                 memset(&info, 0, sizeof(PH_VERIFY_FILE_INFO));
-                                info.FileName = processItem->FileName->Buffer;
+                                info.FileName = processItem->FileNameWin32->Buffer;
                                 info.Flags = PH_VERIFY_VIEW_PROPERTIES;
                                 info.hWnd = hwndDlg;
                                 PhVerifyFileWithAdditionalCatalog(

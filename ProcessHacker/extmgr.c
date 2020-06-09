@@ -193,6 +193,7 @@ VOID PhEmCallObjectOperation(
  * \param AppName A variable which receives the application name.
  * \param SubId A variable which receives the sub-ID.
  */
+_Success_(return)
 BOOLEAN PhEmParseCompoundId(
     _In_ PPH_STRINGREF CompoundId,
     _Out_ PPH_STRINGREF AppName,
@@ -207,11 +208,11 @@ BOOLEAN PhEmParseCompoundId(
 
     if (firstPart.Length == 0)
         return FALSE;
-    if (firstPart.Buffer[0] != '+')
+    if (firstPart.Buffer[0] != L'+')
         return FALSE;
 
     PhSkipStringRef(&firstPart, sizeof(WCHAR));
-    PhSplitStringRefAtChar(&firstPart, '+', &firstPart, &secondPart);
+    PhSplitStringRefAtChar(&firstPart, L'+', &firstPart, &secondPart);
 
     if (firstPart.Length == 0 || secondPart.Length == 0)
         return FALSE;

@@ -3,6 +3,7 @@
  *   tree new column manager
  *
  * Copyright (C) 2011-2016 wj32
+ * Copyright (C) 2017-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -83,8 +84,7 @@ PPH_CM_COLUMN PhCmCreateColumn(
     PPH_CM_COLUMN column;
     PH_TREENEW_COLUMN tnColumn;
 
-    column = PhAllocate(sizeof(PH_CM_COLUMN));
-    memset(column, 0, sizeof(PH_CM_COLUMN));
+    column = PhAllocateZero(sizeof(PH_CM_COLUMN));
     column->Id = Manager->NextId++;
     column->Plugin = Plugin;
     column->SubId = SubId;
@@ -101,7 +101,7 @@ PPH_CM_COLUMN PhCmCreateColumn(
     tnColumn.Text = Column->Text;
     tnColumn.Width = Column->Width;
     tnColumn.Alignment = Column->Alignment;
-    tnColumn.DisplayIndex = Column->Visible ? Column->DisplayIndex : -1;
+    tnColumn.DisplayIndex = Column->Visible ? Column->DisplayIndex : ULONG_MAX;
     tnColumn.TextFlags = Column->TextFlags;
     TreeNew_AddColumn(Manager->Handle, &tnColumn);
 
@@ -143,7 +143,7 @@ VOID PhCmSetNotifyPlugin(
     }
     else
     {
-        if (PhFindItemList(Manager->NotifyList, Plugin) != -1)
+        if (PhFindItemList(Manager->NotifyList, Plugin) != ULONG_MAX)
             return;
     }
 
@@ -171,6 +171,9 @@ BOOLEAN PhCmForwardMessage(
             PPH_TREENEW_GET_CELL_TEXT getCellText = Parameter1;
             PH_TREENEW_COLUMN tnColumn;
             PPH_CM_COLUMN column;
+
+            if (!getCellText)
+                return FALSE;
 
             if (getCellText->Id < Manager->MinId)
                 return FALSE;
@@ -217,9 +220,7 @@ BOOLEAN PhCmForwardMessage(
             // Some plugins want to be notified about all messages.
             if (Manager->NotifyList)
             {
-                ULONG i;
-
-                for (i = 0; i < Manager->NotifyList->Count; i++)
+                for (ULONG i = 0; i < Manager->NotifyList->Count; i++)
                 {
                     plugin = Manager->NotifyList->Items[i];
 
@@ -336,10 +337,10 @@ BOOLEAN PhCmLoadSettingsEx(
 
         remainingColumnPart = *Settings;
 
-        if (remainingColumnPart.Length != 0 && remainingColumnPart.Buffer[0] == '@')
+        if (remainingColumnPart.Length != 0 && remainingColumnPart.Buffer[0] == L'@')
         {
             PhSkipStringRef(&remainingColumnPart, sizeof(WCHAR));
-            PhSplitStringRefAtChar(&remainingColumnPart, '|', &scalePart, &remainingColumnPart);
+            PhSplitStringRefAtChar(&remainingColumnPart, L'|', &scalePart, &remainingColumnPart);
 
             if (scalePart.Length == 0 || !PhStringToInteger64(&scalePart, 10, &integer))
                 goto CleanupExit;
@@ -358,18 +359,18 @@ BOOLEAN PhCmLoadSettingsEx(
             ULONG displayIndex;
             ULONG width;
 
-            PhSplitStringRefAtChar(&remainingColumnPart, '|', &columnPart, &remainingColumnPart);
+            PhSplitStringRefAtChar(&remainingColumnPart, L'|', &columnPart, &remainingColumnPart);
 
             if (columnPart.Length != 0)
             {
                 // Id
 
-                PhSplitStringRefAtChar(&columnPart, ',', &valuePart, &columnPart);
+                PhSplitStringRefAtChar(&columnPart, L',', &valuePart, &columnPart);
 
                 if (valuePart.Length == 0)
                     goto CleanupExit;
 
-                if (valuePart.Buffer[0] == '+')
+                if (valuePart.Buffer[0] == L'+')
                 {
                     PH_STRINGREF pluginName;
                     ULONG subId;
@@ -399,7 +400,7 @@ BOOLEAN PhCmLoadSettingsEx(
 
                 // Display Index
 
-                PhSplitStringRefAtChar(&columnPart, ',', &valuePart, &columnPart);
+                PhSplitStringRefAtChar(&columnPart, L',', &valuePart, &columnPart);
 
                 if (!(Flags & PH_CM_COLUMN_WIDTHS_ONLY))
                 {
@@ -413,7 +414,7 @@ BOOLEAN PhCmLoadSettingsEx(
                     if (valuePart.Length != 0)
                         goto CleanupExit;
 
-                    displayIndex = -1;
+                    displayIndex = ULONG_MAX;
                 }
 
                 // Width
@@ -522,16 +523,16 @@ CleanupExit:
 
     if (SortSettings && SortSettings->Length != 0)
     {
-        PhSplitStringRefAtChar(SortSettings, ',', &valuePart, &subPart);
+        PhSplitStringRefAtChar(SortSettings, L',', &valuePart, &subPart);
 
         if (valuePart.Length != 0 && subPart.Length != 0)
         {
             ULONG sortColumn;
             PH_SORT_ORDER sortOrder;
 
-            sortColumn = -1;
+            sortColumn = ULONG_MAX;
 
-            if (valuePart.Buffer[0] == '+')
+            if (valuePart.Buffer[0] == L'+')
             {
                 PH_STRINGREF pluginName;
                 ULONG subId;
@@ -555,7 +556,7 @@ CleanupExit:
             PhStringToInteger64(&subPart, 10, &integer);
             sortOrder = (PH_SORT_ORDER)integer;
 
-            if (sortColumn != -1 && sortOrder <= DescendingSortOrder)
+            if (sortColumn != ULONG_MAX && sortOrder <= DescendingSortOrder)
             {
                 TreeNew_SetSort(TreeNewHandle, sortColumn, sortOrder);
             }
@@ -677,17 +678,35 @@ PPH_STRING PhCmSaveSettingsEx(
             {
                 if (!Manager || sortColumn < Manager->MinId)
                 {
-                    *SortSettings = PhFormatString(L"%lu,%lu", sortColumn, sortOrder);
+                    PH_FORMAT format[3];
+
+                    // %lu,%lu
+                    PhInitFormatU(&format[0], sortColumn);
+                    PhInitFormatC(&format[1], L',');
+                    PhInitFormatU(&format[2], sortOrder);
+
+                    *SortSettings = PhFormat(format, RTL_NUMBER_OF(format), 32);
                 }
                 else
                 {
                     PH_TREENEW_COLUMN column;
-                    PPH_CM_COLUMN cmColumn;
 
                     if (TreeNew_GetColumn(TreeNewHandle, sortColumn, &column))
                     {
+                        PPH_CM_COLUMN cmColumn;
+                        PH_FORMAT format[6];
+
                         cmColumn = column.Context;
-                        *SortSettings = PhFormatString(L"+%s+%lu,%lu", cmColumn->Plugin->Name.Buffer, cmColumn->SubId, sortOrder);
+
+                        // +%s+%lu,%lu
+                        PhInitFormatC(&format[0], L'+');
+                        PhInitFormatSR(&format[1], cmColumn->Plugin->Name);
+                        PhInitFormatC(&format[2], L'+');
+                        PhInitFormatU(&format[3], cmColumn->SubId);
+                        PhInitFormatC(&format[4], L',');
+                        PhInitFormatU(&format[5], sortOrder);
+
+                        *SortSettings = PhFormat(format, RTL_NUMBER_OF(format), 64);
                     }
                     else
                     {

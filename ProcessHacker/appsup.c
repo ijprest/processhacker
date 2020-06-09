@@ -3,7 +3,7 @@
  *   application support functions
  *
  * Copyright (C) 2010-2016 wj32
- * Copyright (C) 2017-2019 dmex
+ * Copyright (C) 2017-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -489,7 +489,7 @@ BOOLEAN PhaGetProcessKnownCommandLine(
 
             // Get the DLL name part.
 
-            while (i < CommandLine->Length / sizeof(WCHAR) && CommandLine->Buffer[i] == ' ')
+            while (i < CommandLine->Length / sizeof(WCHAR) && CommandLine->Buffer[i] == L' ')
                 i++;
 
             dllName = PhParseCommandLinePart(&CommandLine->sr, &i);
@@ -501,7 +501,7 @@ BOOLEAN PhaGetProcessKnownCommandLine(
 
             // The procedure name begins after the last comma.
 
-            if (!PhSplitStringRefAtLastChar(&dllName->sr, ',', &dllNamePart, &procedureNamePart))
+            if (!PhSplitStringRefAtLastChar(&dllName->sr, L',', &dllNamePart, &procedureNamePart))
                 return FALSE;
 
             dllName = PH_AUTO(PhCreateString2(&dllNamePart));
@@ -534,7 +534,6 @@ BOOLEAN PhaGetProcessKnownCommandLine(
             ULONG_PTR indexOfProcessId;
             PPH_STRING argPart;
             PPH_STRING guidString;
-            UNICODE_STRING guidStringUs;
             GUID guid;
             HANDLE rootKeyHandle;
             HANDLE inprocServer32KeyHandle;
@@ -553,7 +552,7 @@ BOOLEAN PhaGetProcessKnownCommandLine(
 
             // Get the argument part.
 
-            while (i < (ULONG)CommandLine->Length / sizeof(WCHAR) && CommandLine->Buffer[i] == ' ')
+            while (i < (ULONG)CommandLine->Length / sizeof(WCHAR) && CommandLine->Buffer[i] == L' ')
                 i++;
 
             argPart = PhParseCommandLinePart(&CommandLine->sr, &i);
@@ -576,12 +575,8 @@ BOOLEAN PhaGetProcessKnownCommandLine(
                 indexOfProcessId + 11,
                 (ULONG)argPart->Length / sizeof(WCHAR) - indexOfProcessId - 11
                 );
-            PhStringRefToUnicodeString(&guidString->sr, &guidStringUs);
 
-            if (!NT_SUCCESS(RtlGUIDFromString(
-                &guidStringUs,
-                &guid
-                )))
+            if (!NT_SUCCESS(PhStringToGuid(&guidString->sr, &guid)))
                 return FALSE;
 
             KnownCommandLine->ComSurrogate.Guid = guid;
@@ -703,11 +698,11 @@ PPH_STRING PhEscapeStringForDelimiter(
     length = String->Length / sizeof(WCHAR);
     PhInitializeStringBuilder(&stringBuilder, String->Length / sizeof(WCHAR) * 3);
 
-    temp[0] = '\\';
+    temp[0] = L'\\';
 
     for (i = 0; i < length; i++)
     {
-        if (String->Buffer[i] == '\\' || String->Buffer[i] == Delimiter)
+        if (String->Buffer[i] == L'\\' || String->Buffer[i] == Delimiter)
         {
             temp[1] = String->Buffer[i];
             PhAppendStringBuilderEx(&stringBuilder, temp, 4);
@@ -735,7 +730,7 @@ PPH_STRING PhUnescapeStringForDelimiter(
 
     for (i = 0; i < length; i++)
     {
-        if (String->Buffer[i] == '\\')
+        if (String->Buffer[i] == L'\\')
         {
             if (i != length - 1)
             {
@@ -786,20 +781,20 @@ VOID PhShellExecuteUserString(
         return;
     }
 
-    // Get the execute command.
+    // Get the execute command. (dmex) 
     executeString = PhGetStringSetting(Setting);
 
-    // Expand environment strings.
+    // Expand environment strings. (dmex) 
     PhMoveReference(&executeString, PhExpandEnvironmentStrings(&executeString->sr));
 
     // Make sure the user executable string is absolute. We can't use RtlDetermineDosPathNameType_U
-    // here because the string may be a URL.
-    if (PhFindCharInString(executeString, 0, ':') == -1)
+    // here because the string may be a URL. (dmex)
+    if (PhFindCharInString(executeString, 0, L':') == -1)
     {
         INT stringArgCount;
         PWSTR* stringArgList;
 
-        // (dmex) HACK: Escape the individual executeString components.
+        // HACK: Escape the individual executeString components. (dmex) 
         if ((stringArgList = CommandLineToArgvW(executeString->Buffer, &stringArgCount)) && stringArgCount == 2)
         {
             PPH_STRING fileName = PhCreateString(stringArgList[0]);
@@ -928,7 +923,7 @@ VOID PhCopyListViewInfoTip(
             return;
 
         bufferRemaining = GetInfoTip->cchTextMax - copyIndex - 1;
-        GetInfoTip->pszText[copyIndex - 1] = '\n';
+        GetInfoTip->pszText[copyIndex - 1] = L'\n';
     }
     else
     {
@@ -940,7 +935,7 @@ VOID PhCopyListViewInfoTip(
     memcpy(
         &GetInfoTip->pszText[copyIndex],
         Tip->Buffer,
-        copyLength * 2
+        copyLength * sizeof(WCHAR)
         );
     GetInfoTip->pszText[copyIndex + copyLength] = UNICODE_NULL;
 }
@@ -1006,7 +1001,7 @@ BOOLEAN PhGetListViewContextMenuPoint(
     // The user pressed a key to display the context menu.
     // Suggest where the context menu should display.
 
-    if ((selectedIndex = ListView_GetNextItem(ListViewHandle, -1, LVNI_SELECTED)) != -1)
+    if ((selectedIndex = PhFindListViewItemByFlags(ListViewHandle, -1, LVNI_SELECTED)) != -1)
     {
         if (ListView_GetItemRect(ListViewHandle, selectedIndex, &bounds, LVIR_BOUNDS))
         {
@@ -1069,9 +1064,9 @@ PPH_STRING PhGetPhVersion(
     PH_FORMAT format[5];
 
     PhInitFormatU(&format[0], PHAPP_VERSION_MAJOR);
-    PhInitFormatC(&format[1], '.');
+    PhInitFormatC(&format[1], L'.');
     PhInitFormatU(&format[2], PHAPP_VERSION_MINOR);
-    PhInitFormatC(&format[3], '.');
+    PhInitFormatC(&format[3], L'.');
     PhInitFormatU(&format[4], PHAPP_VERSION_REVISION);
 
     return PhFormat(format, 5, 16);
@@ -1092,6 +1087,13 @@ VOID PhGetPhVersionNumbers(
         *BuildNumber = PHAPP_VERSION_BUILD;
     if (RevisionNumber)
         *RevisionNumber = PHAPP_VERSION_REVISION;
+}
+
+PPH_STRING PhGetPhVersionHash(
+    VOID
+    )
+{
+    return PhConvertUtf8ToUtf16(PHAPP_VERSION_COMMIT);
 }
 
 VOID PhWritePhTextHeader(
@@ -1166,7 +1168,7 @@ VOID PhpAppendCommandLineArgument(
     temp = PhEscapeCommandLinePart(Value);
     PhAppendStringBuilder(StringBuilder, &temp->sr);
     PhDereferenceObject(temp);
-    PhAppendCharStringBuilder(StringBuilder, '\"');
+    PhAppendCharStringBuilder(StringBuilder, L'\"');
 }
 
 BOOLEAN PhShellProcessHackerEx(
@@ -1278,11 +1280,11 @@ BOOLEAN PhShellProcessHackerEx(
         // Add user-specified parameters last so they can override the propagated parameters.
         if (Parameters)
         {
-            PhAppendCharStringBuilder(&sb, ' ');
+            PhAppendCharStringBuilder(&sb, L' ');
             PhAppendStringBuilder2(&sb, Parameters);
         }
 
-        if (sb.String->Length != 0 && sb.String->Buffer[0] == ' ')
+        if (sb.String->Length != 0 && sb.String->Buffer[0] == L' ')
             parameters = sb.String->Buffer + 1;
         else
             parameters = sb.String->Buffer;
@@ -1723,13 +1725,14 @@ BOOLEAN PhInsertCopyCellEMenuItem(
     _In_ PPH_TREENEW_COLUMN Column
     )
 {
-    PPH_EMENU_ITEM parentItem;
-    ULONG indexInParent;
+    PPH_EMENU_ITEM parentItem = NULL;
+    ULONG indexInParent = 0;
     PPH_COPY_CELL_CONTEXT context;
     PH_STRINGREF columnText;
     PPH_STRING escapedText;
     PPH_STRING menuItemText;
     PPH_EMENU_ITEM copyCellItem;
+    PH_FORMAT format[3];
 
     if (!Column)
         return FALSE;
@@ -1745,8 +1748,12 @@ BOOLEAN PhInsertCopyCellEMenuItem(
 
     PhInitializeStringRef(&columnText, Column->Text);
     escapedText = PhEscapeStringForMenuPrefix(&columnText);
-    menuItemText = PhFormatString(L"Copy \"%s\"", escapedText->Buffer);
+    PhInitFormatS(&format[0], L"Copy \""); // Copy \"%s\"
+    PhInitFormatSR(&format[1], escapedText->sr);
+    PhInitFormatS(&format[2], L"\"");
+    menuItemText = PhFormat(format, RTL_NUMBER_OF(format), 0);
     PhDereferenceObject(escapedText);
+
     copyCellItem = PhCreateEMenuItem(0, ID_COPY_CELL, menuItemText->Buffer, NULL, context);
     copyCellItem->DeleteFunction = PhpCopyCellEMenuItemDeleteFunction;
     context->MenuItemText = menuItemText;
@@ -1827,8 +1834,8 @@ BOOLEAN PhInsertCopyListViewEMenuItem(
     _In_ HWND ListViewHandle
     )
 {
-    PPH_EMENU_ITEM parentItem;
-    ULONG indexInParent;
+    PPH_EMENU_ITEM parentItem = NULL;
+    ULONG indexInParent = 0;
     PPH_COPY_ITEM_CONTEXT context;
     PPH_STRING columnText = NULL;
     PPH_STRING escapedText;
@@ -1837,7 +1844,8 @@ BOOLEAN PhInsertCopyListViewEMenuItem(
     POINT location;
     LVHITTESTINFO lvHitInfo;
     HDITEM headerItem;
-    WCHAR headerText[MAX_PATH] = L"";
+    PH_FORMAT format[3];
+    WCHAR headerText[MAX_PATH];
 
     if (!GetCursorPos(&location))
         return FALSE;
@@ -1875,7 +1883,10 @@ BOOLEAN PhInsertCopyListViewEMenuItem(
     context->SubId = lvHitInfo.iSubItem;
 
     escapedText = PhEscapeStringForMenuPrefix(&columnText->sr);
-    menuItemText = PhFormatString(L"Copy \"%s\"", escapedText->Buffer);
+    PhInitFormatS(&format[0], L"Copy \""); // Copy \"%s\"
+    PhInitFormatSR(&format[1], escapedText->sr);
+    PhInitFormatS(&format[2], L"\"");
+    menuItemText = PhFormat(format, RTL_NUMBER_OF(format), 0);
     PhDereferenceObject(escapedText);
 
     copyMenuItem = PhCreateEMenuItem(0, ID_COPY_CELL, menuItemText->Buffer, NULL, context);
@@ -2031,13 +2042,11 @@ BOOLEAN PhShellOpenKey2(
     )
 {
     static PH_STRINGREF favoritesKeyName = PH_STRINGREF_INIT(L"Software\\Microsoft\\Windows\\CurrentVersion\\Applets\\Regedit\\Favorites");
-
     BOOLEAN result = FALSE;
     HWND regeditWindow;
     HANDLE favoritesKeyHandle;
     WCHAR favoriteName[32];
-    UNICODE_STRING valueName;
-    PH_STRINGREF valueNameSr;
+    PH_STRINGREF valueName;
     PPH_STRING expandedKeyName;
 
     regeditWindow = FindWindow(L"RegEdit_RegEdit", NULL);
@@ -2069,17 +2078,16 @@ BOOLEAN PhShellOpenKey2(
 
     memcpy(favoriteName, L"A_ProcessHacker", 15 * sizeof(WCHAR));
     PhGenerateRandomAlphaString(&favoriteName[15], 16);
-    RtlInitUnicodeString(&valueName, favoriteName);
-    PhUnicodeStringToStringRef(&valueName, &valueNameSr);
+    PhInitializeStringRefLongHint(&valueName, favoriteName);
 
     expandedKeyName = PhExpandKeyName(KeyName, FALSE);
-    NtSetValueKey(favoritesKeyHandle, &valueName, 0, REG_SZ, expandedKeyName->Buffer, (ULONG)expandedKeyName->Length + sizeof(UNICODE_NULL));
+    PhSetValueKey(favoritesKeyHandle, &valueName, REG_SZ, expandedKeyName->Buffer, (ULONG)expandedKeyName->Length + sizeof(UNICODE_NULL));
     PhDereferenceObject(expandedKeyName);
 
     // Select our entry in regedit.
-    result = PhpSelectFavoriteInRegedit(regeditWindow, &valueNameSr, !PhGetOwnTokenAttributes().Elevated);
+    result = PhpSelectFavoriteInRegedit(regeditWindow, &valueName, !PhGetOwnTokenAttributes().Elevated);
 
-    NtDeleteValueKey(favoritesKeyHandle, &valueName);
+    PhDeleteValueKey(favoritesKeyHandle, &valueName);
     NtClose(favoritesKeyHandle);
 
 CleanupExit:
@@ -2141,3 +2149,343 @@ HBITMAP PhGetShieldBitmap(
     return shieldBitmap;
 }
 
+// HACK - nightly build feature testing (dmex)
+// TODO - move definitions to proper locations.
+#include <taskschd.h>
+DEFINE_GUID(CLSID_TaskScheduler, 0x0f87369f, 0xa4e5, 0x4cfc, 0xbd, 0x3e, 0x73, 0xe6, 0x15, 0x45, 0x72, 0xdd);
+DEFINE_GUID(IID_ITaskService, 0x2FABA4C7, 0x4DA9, 0x4013, 0x96, 0x97, 0x20, 0xCC, 0x3F, 0xD4, 0x0F, 0x85);
+DEFINE_GUID(IID_ITaskSettings2, 0x2C05C3F0, 0x6EED, 0x4C05, 0xA1, 0x5F, 0xED, 0x7D, 0x7A, 0x98, 0xA3, 0x69);
+DEFINE_GUID(IID_ILogonTrigger, 0x72DADE38, 0xFAE4, 0x4b3e, 0xBA, 0xF4, 0x5D, 0x00, 0x9A, 0xF0, 0x2B, 0x1C);
+DEFINE_GUID(IID_IExecAction, 0x4C3D624D, 0xfd6b, 0x49A3, 0xB9, 0xB7, 0x09, 0xCB, 0x3C, 0xD3, 0xF0, 0x47);
+
+HRESULT PhRunAsAdminTask(
+    _In_ PWSTR TaskName
+    )
+{
+    HRESULT status = S_FALSE;
+    VARIANT empty = { VT_EMPTY };
+    ITaskService* taskService = NULL;
+    ITaskFolder* taskFolder = NULL;
+    IRegisteredTask* taskRegisteredTask = NULL;
+    IRunningTask* taskRunningTask = NULL;
+
+    status = PhGetClassObject(
+        L"taskschd.dll",
+        &CLSID_TaskScheduler,
+        &IID_ITaskService,
+        &taskService
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskService_Connect(
+        taskService,
+        empty,
+        empty,
+        empty,
+        empty
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskService_GetFolder(
+        taskService,
+        L"\\",
+        &taskFolder
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskFolder_GetTask(
+        taskFolder,
+        TaskName,
+        &taskRegisteredTask
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = IRegisteredTask_RunEx(
+        taskRegisteredTask,
+        empty,
+        TASK_RUN_AS_SELF,
+        0,
+        NULL,
+        &taskRunningTask
+        );
+
+CleanupExit:
+
+    if (taskRunningTask)
+        IRunningTask_Release(taskRunningTask);
+    if (taskRegisteredTask)
+        IRegisteredTask_Release(taskRegisteredTask);
+    if (taskFolder)
+        ITaskFolder_Release(taskFolder);
+    if (taskService)
+        ITaskService_Release(taskService);
+
+    return status;
+}
+
+HRESULT PhDeleteAdminTask(
+    _In_ PWSTR TaskName
+    )
+{
+    HRESULT status = S_FALSE;
+    VARIANT empty = { VT_EMPTY };
+    ITaskService* taskService = NULL;
+    ITaskFolder* taskFolder = NULL;
+
+    status = PhGetClassObject(
+        L"taskschd.dll",
+        &CLSID_TaskScheduler,
+        &IID_ITaskService,
+        &taskService
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskService_Connect(
+        taskService,
+        empty,
+        empty,
+        empty,
+        empty
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskService_GetFolder(
+        taskService,
+        L"\\",
+        &taskFolder
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskFolder_DeleteTask(
+        taskFolder,
+        TaskName,
+        0
+        );
+
+CleanupExit:
+
+    if (taskFolder)
+        ITaskFolder_Release(taskFolder);
+    if (taskService)
+        ITaskService_Release(taskService);
+
+    return status;
+}
+
+HRESULT PhCreateAdminTask(
+    _In_ PWSTR TaskName,
+    _In_ PWSTR FileName
+    )
+{
+    HRESULT status = S_FALSE;
+    VARIANT empty = { VT_EMPTY };
+    ITaskService* taskService = NULL;
+    ITaskFolder* taskFolder = NULL;
+    ITaskDefinition* taskDefinition = NULL;
+    ITaskSettings* taskSettings = NULL;
+    ITaskSettings2* taskSettings2 = NULL;
+    ITriggerCollection* taskTriggerCollection = NULL;
+    ITrigger* taskTrigger = NULL;
+    ILogonTrigger* taskLogonTrigger = NULL;
+    IRegisteredTask* taskRegisteredTask = NULL;
+    IPrincipal* taskPrincipal = NULL;
+    IActionCollection* taskActionCollection = NULL;
+    IAction* taskAction = NULL;
+    IExecAction* taskExecAction = NULL;
+
+    status = PhGetClassObject(
+        L"taskschd.dll",
+        &CLSID_TaskScheduler,
+        &IID_ITaskService,
+        &taskService
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskService_Connect(
+        taskService,
+        empty,
+        empty,
+        empty,
+        empty
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskService_GetFolder(
+        taskService,
+        L"\\",
+        &taskFolder
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskService_NewTask(
+        taskService,
+        0,
+        &taskDefinition
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = ITaskDefinition_get_Settings(
+        taskDefinition,
+        &taskSettings
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    ITaskSettings_put_Compatibility(taskSettings, TASK_COMPATIBILITY_V2_1);
+    ITaskSettings_put_StartWhenAvailable(taskSettings, VARIANT_TRUE);
+    ITaskSettings_put_DisallowStartIfOnBatteries(taskSettings, VARIANT_FALSE);
+    ITaskSettings_put_StopIfGoingOnBatteries(taskSettings, VARIANT_FALSE);
+    ITaskSettings_put_ExecutionTimeLimit(taskSettings, L"PT0S");
+    //ITaskSettings_put_Priority(taskSettings, 1);
+
+    if (SUCCEEDED(ITaskSettings_QueryInterface(
+        taskSettings,
+        &IID_ITaskSettings2,
+        &taskSettings2
+        )))
+    {
+        ITaskSettings2_put_UseUnifiedSchedulingEngine(taskSettings2, VARIANT_TRUE);
+        ITaskSettings2_put_DisallowStartOnRemoteAppSession(taskSettings2, VARIANT_TRUE);
+        ITaskSettings2_Release(taskSettings2);
+    }
+
+    //status = ITaskDefinition_get_Triggers(
+    //    taskDefinition,
+    //    &taskTriggerCollection
+    //    );
+    //
+    //if (FAILED(status))
+    //    goto CleanupExit;
+    //
+    //status = ITriggerCollection_Create(
+    //    taskTriggerCollection,
+    //    TASK_TRIGGER_LOGON,
+    //    &taskTrigger
+    //    );
+    //
+    //if (FAILED(status))
+    //    goto CleanupExit;
+    //
+    //status = ITrigger_QueryInterface(
+    //    taskTrigger,
+    //    &IID_ILogonTrigger,
+    //    &taskLogonTrigger
+    //    );
+    //
+    //if (FAILED(status))
+    //    goto CleanupExit;
+    //
+    //ILogonTrigger_put_Id(taskLogonTrigger, L"LogonTriggerId");
+    //ILogonTrigger_put_UserId(taskLogonTrigger, PhGetString(PhGetTokenUserString(PhGetOwnTokenAttributes().TokenHandle, TRUE)));
+
+    status = ITaskDefinition_get_Principal(
+        taskDefinition,
+        &taskPrincipal
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    IPrincipal_put_RunLevel(taskPrincipal, TASK_RUNLEVEL_HIGHEST);
+    IPrincipal_put_LogonType(taskPrincipal, TASK_LOGON_INTERACTIVE_TOKEN);
+        
+    status = ITaskDefinition_get_Actions(
+        taskDefinition,
+        &taskActionCollection
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = IActionCollection_Create(
+        taskActionCollection,
+        TASK_ACTION_EXEC,
+        &taskAction
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = IAction_QueryInterface(
+        taskAction,
+        &IID_IExecAction,
+        &taskExecAction
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    status = IExecAction_put_Path(
+        taskExecAction,
+        FileName
+        );
+
+    if (FAILED(status))
+        goto CleanupExit;
+
+    ITaskFolder_DeleteTask(
+        taskFolder,
+        TaskName,
+        0
+        );
+
+    status = ITaskFolder_RegisterTaskDefinition(
+        taskFolder,
+        TaskName,
+        taskDefinition,
+        TASK_CREATE_OR_UPDATE,
+        empty,
+        empty,
+        TASK_LOGON_INTERACTIVE_TOKEN,
+        empty,
+        &taskRegisteredTask
+        );
+
+CleanupExit:
+
+    if (taskRegisteredTask)
+        IRegisteredTask_Release(taskRegisteredTask);
+    if (taskActionCollection)
+        IActionCollection_Release(taskActionCollection);
+    if (taskPrincipal)
+        IPrincipal_Release(taskPrincipal);
+    if (taskLogonTrigger)
+        ILogonTrigger_Release(taskLogonTrigger);
+    if (taskTrigger)
+        ITrigger_Release(taskTrigger);
+    if (taskTriggerCollection)
+        ITriggerCollection_Release(taskTriggerCollection);
+    if (taskSettings)
+        ITaskSettings_Release(taskSettings);
+    if (taskDefinition)
+        ITaskDefinition_Release(taskDefinition);
+    if (taskFolder)
+        ITaskFolder_Release(taskFolder);
+    if (taskService)
+        ITaskService_Release(taskService);
+
+    return status;
+}

@@ -241,6 +241,9 @@ VOID NTAPI NetworkPingUpdateHandler(
 {
     PNETWORK_PING_CONTEXT context = (PNETWORK_PING_CONTEXT)Context;
 
+    if (!context)
+        return;
+
     // Queue up the next ping request
     PhQueueItemWorkQueue(&context->PingWorkQueue, NetworkPingThreadStart, (PVOID)context);
 }
@@ -444,13 +447,13 @@ INT_PTR CALLBACK NetworkPingWndProc(
                     {
                         if (PhGetIntegerSetting(L"GraphShowText"))
                         {
-                            HDC hdc = Graph_GetBufferedContext(context->PingGraphHandle);
+                            HDC hdc;
 
                             PhMoveReference(&context->PingGraphState.Text,
                                 PhFormatString(L"%lu ms", context->CurrentPingMs)
                                 );
 
-                            SelectFont(hdc, PhApplicationFont);
+                            hdc = Graph_GetBufferedContext(context->PingGraphHandle);
                             PhSetGraphText(hdc, drawInfo, &context->PingGraphState.Text->sr,
                                 &NormalGraphTextMargin, &NormalGraphTextPadding, PH_ALIGN_TOP | PH_ALIGN_LEFT);
                         }

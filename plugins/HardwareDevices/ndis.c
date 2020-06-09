@@ -2,7 +2,7 @@
  * Process Hacker Plugins -
  *   Hardware Devices Plugin
  *
- * Copyright (C) 2015-2016 dmex
+ * Copyright (C) 2015-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -23,9 +23,6 @@
 #include "devices.h"
 #include <cguid.h>
 #include <objbase.h>
-
-PVOID IphlpHandle = NULL;
-_GetInterfaceDescriptionFromGuid GetInterfaceDescriptionFromGuid_I = NULL;
 
 BOOLEAN NetworkAdapterQuerySupported(
     _In_ HANDLE DeviceHandle
@@ -122,6 +119,7 @@ BOOLEAN NetworkAdapterQuerySupported(
     return ndisQuerySupported;
 }
 
+_Success_(return)
 BOOLEAN NetworkAdapterQueryNdisVersion(
     _In_ HANDLE DeviceHandle,
     _Out_opt_ PUINT MajorVersion,
@@ -163,9 +161,137 @@ BOOLEAN NetworkAdapterQueryNdisVersion(
     return FALSE;
 }
 
-PPH_STRING NetworkAdapterQueryName(
-    _In_ HANDLE DeviceHandle,
+PPH_STRING NetworkAdapterQueryNameFromGuid(
     _In_ PPH_STRING InterfaceGuid
+    )
+{
+    // Query adapter description using undocumented function. (dmex)
+    static ULONG (WINAPI* NhGetInterfaceDescriptionFromGuid_I)(
+        _In_ PGUID InterfaceGuid,
+        _Out_opt_ PWSTR InterfaceDescription,
+        _Inout_ PSIZE_T InterfaceDescriptionLength,
+        PVOID Unknown1,
+        PVOID Unknown2
+        ) = NULL;
+    GUID interfaceGuid = GUID_NULL;
+
+    if (!NhGetInterfaceDescriptionFromGuid_I)
+    {
+        PVOID iphlpHandle;
+
+        if (iphlpHandle = LoadLibrary(L"iphlpapi.dll"))
+        {
+            NhGetInterfaceDescriptionFromGuid_I = PhGetProcedureAddress(iphlpHandle, "NhGetInterfaceDescriptionFromGuid", 0);
+        }
+    }
+
+    if (!NhGetInterfaceDescriptionFromGuid_I)
+        return NULL;
+
+    if (NT_SUCCESS(PhStringToGuid(&InterfaceGuid->sr, &interfaceGuid)))
+    {
+        WCHAR adapterDescription[NDIS_IF_MAX_STRING_SIZE + 1] = L"";
+        SIZE_T adapterDescriptionLength = sizeof(adapterDescription);
+
+        if (SUCCEEDED(NhGetInterfaceDescriptionFromGuid_I(
+            &interfaceGuid,
+            adapterDescription,
+            &adapterDescriptionLength,
+            NULL,
+            NULL
+            )))
+        {
+            return PhCreateString(adapterDescription);
+        }
+    }
+
+    return NULL;
+}
+
+PPH_STRING NetworkAdapterGetInterfaceAliasFromLuid(
+    _In_ PDV_NETADAPTER_ID Id
+    )
+{
+    WCHAR aliasBuffer[IF_MAX_STRING_SIZE + 1];
+
+    if (NETIO_SUCCESS(ConvertInterfaceLuidToAlias(
+        &Id->InterfaceLuid,
+        aliasBuffer,
+        IF_MAX_STRING_SIZE
+        )))
+    {
+        return PhCreateString(aliasBuffer);
+    }
+
+    return NULL;
+}
+
+PPH_STRING NetworkAdapterGetInterfaceNameFromLuid(
+    _In_ PDV_NETADAPTER_ID Id
+    )
+{
+    WCHAR interfaceName[IF_MAX_STRING_SIZE + 1];
+
+    if (NETIO_SUCCESS(ConvertInterfaceLuidToNameW(
+        &Id->InterfaceLuid,
+        interfaceName,
+        IF_MAX_STRING_SIZE
+        )))
+    {
+        return PhCreateString(interfaceName);
+    }
+
+    return NULL;
+}
+
+PPH_STRING NetworkAdapterGetInterfaceAliasFromGuid(
+    _In_ PPH_STRING InterfaceGuid
+    )
+{
+   static ULONG (WINAPI* NhGetInterfaceNameFromGuid_I)(
+       _In_ PGUID InterfaceGuid,
+       _Out_writes_(InterfaceAliasLength) PWSTR InterfaceAlias,
+       _Inout_ PSIZE_T InterfaceAliasLength,
+       PVOID Unknown1,
+       PVOID Unknown2
+       ) = NULL;
+   GUID interfaceGuid = GUID_NULL;
+
+    if (!NhGetInterfaceNameFromGuid_I)
+    {
+        PVOID iphlpHandle;
+
+        if (iphlpHandle = LoadLibrary(L"iphlpapi.dll"))
+        {
+            NhGetInterfaceNameFromGuid_I = PhGetProcedureAddress(iphlpHandle, "NhGetInterfaceDescriptionFromGuid", 0);
+        }
+    }
+
+    if (!NhGetInterfaceNameFromGuid_I)
+        return NULL;
+
+    if (NT_SUCCESS(PhStringToGuid(&InterfaceGuid->sr, &interfaceGuid)))
+    {
+        WCHAR adapterAlias[NDIS_IF_MAX_STRING_SIZE + 1] = L"";
+        SIZE_T adapterAliasLength = sizeof(adapterAlias);
+
+        if (SUCCEEDED(NhGetInterfaceNameFromGuid_I(
+            &interfaceGuid,
+            adapterAlias,
+            &adapterAliasLength,
+            NULL,
+            NULL
+            )))
+        {
+            return PhCreateString(adapterAlias);
+        }
+    }
+
+    return NULL;
+}
+
+PPH_STRING NetworkAdapterQueryName(
+    _In_ HANDLE DeviceHandle
     )
 {
     NDIS_OID opcode;
@@ -190,35 +316,7 @@ PPH_STRING NetworkAdapterQueryName(
         return PhCreateString(adapterName);
     }
 
-    if (!GetInterfaceDescriptionFromGuid_I)
-    {
-        if (IphlpHandle = LoadLibrary(L"iphlpapi.dll"))
-        {
-            GetInterfaceDescriptionFromGuid_I = PhGetProcedureAddress(IphlpHandle, "NhGetInterfaceDescriptionFromGuid", 0);
-        }
-    }
-
-    // HACK: Query adapter description using undocumented function.
-    if (GetInterfaceDescriptionFromGuid_I)
-    {
-        GUID deviceGuid = GUID_NULL;
-        UNICODE_STRING guidStringUs;
-
-        PhStringRefToUnicodeString(&InterfaceGuid->sr, &guidStringUs);
-
-        if (NT_SUCCESS(RtlGUIDFromString(&guidStringUs, &deviceGuid)))
-        {
-            WCHAR adapterDescription[NDIS_IF_MAX_STRING_SIZE + 1] = L"";
-            SIZE_T adapterDescriptionLength = sizeof(adapterDescription);
-
-            if (SUCCEEDED(GetInterfaceDescriptionFromGuid_I(&deviceGuid, adapterDescription, &adapterDescriptionLength, NULL, NULL)))
-            {
-                return PhCreateString(adapterDescription);
-            }
-        }
-    }
-
-    return PhCreateString(L"Unknown Network Adapter");
+    return NULL;
 }
 
 NTSTATUS NetworkAdapterQueryStatistics(
@@ -293,6 +391,7 @@ NTSTATUS NetworkAdapterQueryLinkState(
     return status;
 }
 
+_Success_(return)
 BOOLEAN NetworkAdapterQueryMediaType(
     _In_ HANDLE DeviceHandle,
     _Out_ PNDIS_PHYSICAL_MEDIUM Medium
@@ -447,23 +546,32 @@ ULONG64 NetworkAdapterQueryValue(
     return 0;
 }
 
-BOOLEAN QueryInterfaceRow(
+_Success_(return)
+BOOLEAN NetworkAdapterQueryInterfaceRow(
     _In_ PDV_NETADAPTER_ID Id,
+    _In_ MIB_IF_ENTRY_LEVEL Level,
     _Out_ PMIB_IF_ROW2 InterfaceRow
     )
 {
-    BOOLEAN result = FALSE;
     MIB_IF_ROW2 interfaceRow;
 
     memset(&interfaceRow, 0, sizeof(MIB_IF_ROW2));
-
     interfaceRow.InterfaceLuid = Id->InterfaceLuid;
     interfaceRow.InterfaceIndex = Id->InterfaceIndex;
 
-    if (GetIfEntry2(&interfaceRow) == NO_ERROR)
+    if (WindowsVersion >= WINDOWS_10_RS2 && GetIfEntry2Ex)
     {
-        result = TRUE;
+        if (NETIO_SUCCESS(GetIfEntry2Ex(Level, &interfaceRow)))
+        {
+            *InterfaceRow = interfaceRow;
+            return TRUE;
+        }
+    }
+
+    if (NETIO_SUCCESS(GetIfEntry2(&interfaceRow)))
+    {
         *InterfaceRow = interfaceRow;
+        return TRUE;
     }
 
     //MIB_IPINTERFACE_ROW interfaceTable;
@@ -473,7 +581,7 @@ BOOLEAN QueryInterfaceRow(
     //interfaceTable.InterfaceIndex = Context->AdapterEntry->InterfaceIndex;
     //GetIpInterfaceEntry(&interfaceTable);
 
-    return result;
+    return FALSE;
 }
 
 PWSTR MediumTypeToString(
@@ -626,7 +734,7 @@ PWSTR MediumTypeToString(
 //                SOCKADDR_IN6 remoteAddr = { 0 };
 //                remoteAddr.sin6_family = AF_INET6;
 //                remoteAddr.sin6_port = htons(80);
-//                memcpy(&remoteAddr.sin6_addr.u.Byte, i->Data.AAAA.Ip6Address.IP6Byte, sizeof(i->Data.AAAA.Ip6Address.IP6Byte));
+//                memcpy(&remoteAddr.sin6_addr.s6_addr, i->Data.AAAA.Ip6Address.IP6Byte, sizeof(i->Data.AAAA.Ip6Address.IP6Byte));
 //
 //                if (WSAConnect(socketHandle, (PSOCKADDR)&remoteAddr, sizeof(SOCKADDR_IN6), NULL, NULL, NULL, NULL) != SOCKET_ERROR)
 //                {

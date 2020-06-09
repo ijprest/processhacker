@@ -3,7 +3,7 @@
  *   main program
  *
  * Copyright (C) 2010-2016 wj32
- * Copyright (C) 2011-2019 dmex
+ * Copyright (C) 2011-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -102,7 +102,7 @@ VOID NTAPI ProcessesUpdatedCallback(
     _In_opt_ PVOID Context
     )
 {
-    if (ProcessesUpdatedCount <= 2)
+    if (ProcessesUpdatedCount != 3)
     {
         ProcessesUpdatedCount++;
         return;
@@ -122,7 +122,10 @@ VOID NTAPI TreeNewInitializingCallback(
     _In_opt_ PVOID Context
     )
 {
-    *(HWND *)Context = ((PPH_PLUGIN_TREENEW_INFORMATION)Parameter)->TreeNewHandle;
+    if (Context && Parameter)
+    {
+        *(HWND*)Context = ((PPH_PLUGIN_TREENEW_INFORMATION)Parameter)->TreeNewHandle;
+    }
 }
 
 VOID RegisterTabSearch(
@@ -269,7 +272,7 @@ VOID ShowCustomizeMenu(
                 ToolbarLoadSettings();
                 ReBarSaveLayoutSettings();
 
-                if (ToolStatusConfig.SearchBoxEnabled)
+                if (ToolStatusConfig.SearchBoxEnabled && !ToolStatusConfig.SearchAutoFocus)
                 {
                     // Adding the Searchbox makes it focused,
                     // reset the focus back to the main window.
@@ -389,6 +392,9 @@ VOID NTAPI TabPageUpdatedCallback(
         }
         break;
     }
+
+    if (ToolStatusConfig.SearchAutoFocus)
+        SetFocus(SearchboxHandle);
 }
 
 VOID NTAPI LayoutPaddingCallback(
@@ -628,6 +634,9 @@ LRESULT CALLBACK MainWndSubclassProc(
                 goto DefaultWndProc;
             case EN_KILLFOCUS:
                 {
+                    if (!SearchboxHandle)
+                        break;
+
                     if (GET_WM_COMMAND_HWND(wParam, lParam) != SearchboxHandle)
                         break;
 
@@ -1117,24 +1126,10 @@ LRESULT CALLBACK MainWndSubclassProc(
 
                     if (ToolStatusConfig.ResolveGhostWindows)
                     {
-                        // This is an undocumented function exported by user32.dll that
-                        // retrieves the hung window represented by a ghost window.
-                        static HWND (WINAPI *HungWindowFromGhostWindow_I)(
-                            _In_ HWND WindowHandle
-                            );
+                        HWND hungWindow = PhHungWindowFromGhostWindow(TargetingCurrentWindow);
 
-                        if (!HungWindowFromGhostWindow_I)
-                            HungWindowFromGhostWindow_I = PhGetModuleProcAddress(L"user32.dll", "HungWindowFromGhostWindow");
-
-                        if (HungWindowFromGhostWindow_I)
-                        {
-                            HWND hungWindow = HungWindowFromGhostWindow_I(TargetingCurrentWindow);
-
-                            // The call will have failed if the window wasn't actually a ghost
-                            // window.
-                            if (hungWindow)
-                                TargetingCurrentWindow = hungWindow;
-                        }
+                        if (hungWindow)
+                            TargetingCurrentWindow = hungWindow;
                     }
 
                     threadId = GetWindowThreadProcessId(TargetingCurrentWindow, &processId);
@@ -1226,8 +1221,13 @@ LRESULT CALLBACK MainWndSubclassProc(
         ProcessHacker_InvalidateLayoutPadding(hWnd);
         break;
     case WM_SETTINGCHANGE:
-        // Forward to the Searchbox so we can reinitialize the settings...
-        SendMessage(SearchboxHandle, WM_SETTINGCHANGE, 0, 0);
+        {
+            if (SearchboxHandle)
+            {
+                // Forward to the Searchbox so we can reinitialize the settings. (dmex)
+                SendMessage(SearchboxHandle, WM_SETTINGCHANGE, 0, 0);
+            }
+        }
         break;
     case WM_SHOWWINDOW:
         {
@@ -1330,6 +1330,9 @@ VOID NTAPI MainWindowShowingCallback(
     {
         SetMenu(PhMainWndHandle, NULL);
     }
+
+    if (ToolStatusConfig.SearchBoxEnabled && ToolStatusConfig.SearchAutoFocus && SearchboxHandle)
+        SetFocus(SearchboxHandle);
 }
 
 VOID NTAPI MainMenuInitializingCallback(

@@ -245,6 +245,9 @@
     <ClCompile Include="http.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="format_std.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\circbuf.h">
@@ -518,6 +521,9 @@
       <Filter>Json-C\Headers</Filter>
     </ClInclude>
     <ClInclude Include="include\wslsup.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\exprodid.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

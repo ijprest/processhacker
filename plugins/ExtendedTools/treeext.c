@@ -3,6 +3,7 @@
  *   process and network tree support
  *
  * Copyright (C) 2011 wj32
+ * Copyright (C) 2011-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -142,7 +143,7 @@ VOID EtProcessTreeNewInitializing(
     PPH_PLUGIN_TREENEW_INFORMATION treeNewInfo = Parameter;
     ULONG i;
 
-    for (i = 0; i < sizeof(columns) / sizeof(COLUMN_INFO); i++)
+    for (i = 0; i < RTL_NUMBER_OF(columns); i++)
     {
         EtpAddTreeNewColumn(treeNewInfo, columns[i].SubId, columns[i].Text, columns[i].Width, columns[i].Alignment,
             columns[i].TextFlags, columns[i].SortDescending, EtpProcessTreeNewSortFunction);
@@ -208,11 +209,9 @@ static VOID PhpAggregateField(
     _Inout_ PVOID AggregatedValue
     )
 {
-    ULONG i;
-
     PhpAccumulateField(AggregatedValue, PhpFieldForAggregate(ProcessNode, Location, FieldOffset), Type);
 
-    for (i = 0; i < ProcessNode->Children->Count; i++)
+    for (ULONG i = 0; i < ProcessNode->Children->Count; i++)
     {
         PhpAggregateField(ProcessNode->Children->Items[i], Type, Location, FieldOffset, AggregatedValue);
     }
@@ -313,8 +312,8 @@ VOID EtProcessTreeNewMessage(
                 {
                     ULONG64 number = 0;
 
-                    PhpAggregateFieldIfNeeded(processNode, AggregateTypeInt64, AggregateLocationProcessItem, FIELD_OFFSET(ET_PROCESS_BLOCK, DiskReadRawDelta), &number);
-                    PhpAggregateFieldIfNeeded(processNode, AggregateTypeInt64, AggregateLocationProcessItem, FIELD_OFFSET(ET_PROCESS_BLOCK, DiskWriteRawDelta), &number);
+                    PhpAggregateFieldIfNeeded(processNode, AggregateTypeInt64, AggregateLocationProcessItem, FIELD_OFFSET(ET_PROCESS_BLOCK, DiskReadRawDelta.Delta), &number);
+                    PhpAggregateFieldIfNeeded(processNode, AggregateTypeInt64, AggregateLocationProcessItem, FIELD_OFFSET(ET_PROCESS_BLOCK, DiskWriteRawDelta.Delta), &number);
 
                     if (number != 0)
                         text = PhFormatSize(number, ULONG_MAX);
@@ -881,7 +880,7 @@ ET_FIREWALL_STATUS EtQueryFirewallStatus(
 
     if (!manager)
     {
-        if (!SUCCEEDED(CoCreateInstance(&CLSID_NetFwMgr_I, NULL, CLSCTX_INPROC_SERVER, &IID_INetFwMgr_I, &manager)))
+        if (!SUCCEEDED(PhGetClassObject(L"firewallapi.dll", &CLSID_NetFwMgr_I, &IID_INetFwMgr_I, &manager)))
             return FirewallUnknownStatus;
 
         if (!manager)
@@ -893,7 +892,7 @@ ET_FIREWALL_STATUS EtQueryFirewallStatus(
     if (!processItem)
         return FirewallUnknownStatus;
 
-    if (!processItem->FileName)
+    if (!processItem->FileNameWin32)
     {
         PhDereferenceObject(processItem);
         return FirewallUnknownStatus;
@@ -901,7 +900,7 @@ ET_FIREWALL_STATUS EtQueryFirewallStatus(
 
     result = FirewallUnknownStatus;
 
-    if (imageFileNameBStr = SysAllocStringLen(processItem->FileName->Buffer, (ULONG)processItem->FileName->Length / sizeof(WCHAR)))
+    if (imageFileNameBStr = SysAllocStringLen(processItem->FileNameWin32->Buffer, (ULONG)processItem->FileNameWin32->Length / sizeof(WCHAR)))
     {
         localAddressBStr = NULL;
 

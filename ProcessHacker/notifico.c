@@ -36,6 +36,7 @@
 
 #include <mainwndp.h>
 #include <notificop.h>
+#include <malloc.h>
 
 BOOLEAN PhNfMiniInfoEnabled = FALSE;
 BOOLEAN PhNfMiniInfoPinned = FALSE;
@@ -72,10 +73,11 @@ VOID PhNfLoadSettings(
     PH_STRINGREF remaining;
 
     settingsString = PhGetStringSetting(L"IconSettings");
-    remaining = PhGetStringRef(settingsString);
 
-    if (remaining.Length == 0)
+    if (PhIsNullOrEmptyString(settingsString))
         return;
+
+    remaining = PhGetStringRef(settingsString);
 
     while (remaining.Length != 0)
     {
@@ -85,9 +87,9 @@ VOID PhNfLoadSettings(
         ULONG64 idInteger;
         ULONG64 flagsInteger;
 
-        PhSplitStringRefAtChar(&remaining, '|', &idPart, &remaining);
-        PhSplitStringRefAtChar(&remaining, '|', &flagsPart, &remaining);
-        PhSplitStringRefAtChar(&remaining, '|', &pluginNamePart, &remaining);
+        PhSplitStringRefAtChar(&remaining, L'|', &idPart, &remaining);
+        PhSplitStringRefAtChar(&remaining, L'|', &flagsPart, &remaining);
+        PhSplitStringRefAtChar(&remaining, L'|', &pluginNamePart, &remaining);
 
         if (!PhStringToInteger64(&idPart, 10, &idInteger))
             break;
@@ -193,21 +195,17 @@ VOID PhNfLoadGuids(
         for (i = 0; i < RTL_NUMBER_OF(PhNfpTrayIconItemGuids); i++)
         {
             PH_STRINGREF guidPart;
-            UNICODE_STRING guidStringUs;
             GUID guid;
 
             if (remaining.Length == 0)
                 continue;
 
-            PhSplitStringRefAtChar(&remaining, '|', &guidPart, &remaining);
+            PhSplitStringRefAtChar(&remaining, L'|', &guidPart, &remaining);
 
             if (guidPart.Length == 0)
                 continue;
 
-            if (!PhStringRefToUnicodeString(&guidPart, &guidStringUs))
-                continue;
-
-            if (!NT_SUCCESS(RtlGUIDFromString(&guidStringUs, &guid)))
+            if (!NT_SUCCESS(PhStringToGuid(&guidPart, &guid)))
                 PhGenerateGuid(&PhNfpTrayIconItemGuids[i]);
             else
                 PhNfpTrayIconItemGuids[i] = guid;
@@ -442,8 +440,7 @@ VOID PhNfSetVisibleIcon(
 BOOLEAN PhNfShowBalloonTip(
     _In_ PWSTR Title,
     _In_ PWSTR Text,
-    _In_ ULONG Timeout,
-    _In_ ULONG Flags
+    _In_ ULONG Timeout
     )
 {
     NOTIFYICONDATA notifyIcon = { sizeof(NOTIFYICONDATA) };
@@ -470,7 +467,7 @@ BOOLEAN PhNfShowBalloonTip(
     wcsncpy_s(notifyIcon.szInfoTitle, RTL_NUMBER_OF(notifyIcon.szInfoTitle), Title, _TRUNCATE);
     wcsncpy_s(notifyIcon.szInfo, RTL_NUMBER_OF(notifyIcon.szInfo), Text, _TRUNCATE);
     notifyIcon.uTimeout = Timeout;
-    notifyIcon.dwInfoFlags = Flags;
+    notifyIcon.dwInfoFlags = NIIF_INFO;
 
     Shell_NotifyIcon(NIM_MODIFY, &notifyIcon);
 
@@ -744,7 +741,7 @@ BOOLEAN PhNfpAddNotifyIcon(
     notifyIcon.uCallbackMessage = WM_PH_NOTIFY_ICON_MESSAGE;
     notifyIcon.guidItem = Icon->IconGuid;
     wcsncpy_s(
-        notifyIcon.szTip, sizeof(notifyIcon.szTip) / sizeof(WCHAR),
+        notifyIcon.szTip, RTL_NUMBER_OF(notifyIcon.szTip),
         PhGetStringOrDefault(Icon->TextCache, PhApplicationName),
         _TRUNCATE
         );
@@ -804,8 +801,7 @@ BOOLEAN PhNfpModifyNotifyIcon(
     {
         PhSwapReference(&Icon->TextCache, Text);
         wcsncpy_s(
-            notifyIcon.szTip,
-            ARRAYSIZE(notifyIcon.szTip),
+            notifyIcon.szTip, RTL_NUMBER_OF(notifyIcon.szTip),
             PhGetStringOrDefault(Text, PhApplicationName),
             _TRUNCATE
             );
@@ -1047,7 +1043,7 @@ VOID PhNfpCpuHistoryIconUpdateCallback(
         maxCpuProcessItem = NULL;
 
     PhInitFormatS(&format[0], L"CPU Usage: ");
-    PhInitFormatF(&format[1], (PhCpuKernelUsage + PhCpuUserUsage) * 100, 2);
+    PhInitFormatF(&format[1], ((DOUBLE)PhCpuKernelUsage + PhCpuUserUsage) * 100, 2);
     PhInitFormatC(&format[2], '%');
 
     if (maxCpuProcessItem)
@@ -1055,7 +1051,7 @@ VOID PhNfpCpuHistoryIconUpdateCallback(
         PhInitFormatC(&format[3], '\n');
         PhInitFormatSR(&format[4], maxCpuProcessItem->ProcessName->sr);
         PhInitFormatS(&format[5], L": ");
-        PhInitFormatF(&format[6], maxCpuProcessItem->CpuUsage * 100, 2);
+        PhInitFormatF(&format[6], (DOUBLE)maxCpuProcessItem->CpuUsage * 100, 2);
         PhInitFormatC(&format[7], '%');
     }
 
@@ -1281,7 +1277,7 @@ VOID PhNfpPhysicalHistoryIconUpdateCallback(
     HDC hdc;
     HBITMAP oldBitmap;
     ULONG physicalUsage;
-    FLOAT physicalFraction;
+    DOUBLE physicalFraction;
     PH_FORMAT format[5];
 
     // Icon
@@ -1312,7 +1308,7 @@ VOID PhNfpPhysicalHistoryIconUpdateCallback(
     // Text
 
     physicalUsage = PhSystemBasicInformation.NumberOfPhysicalPages - PhPerfInformation.AvailablePages;
-    physicalFraction = (FLOAT)physicalUsage / PhSystemBasicInformation.NumberOfPhysicalPages;
+    physicalFraction = (DOUBLE)physicalUsage / PhSystemBasicInformation.NumberOfPhysicalPages;
 
     PhInitFormatS(&format[0], L"Physical memory: ");
     PhInitFormatSize(&format[1], UInt32x32To64(physicalUsage, PAGE_SIZE));
@@ -1487,7 +1483,7 @@ VOID PhNfpCpuUsageTextIconUpdateCallback(
 
     Icon->Pointers->BeginBitmap(&drawInfo.Width, &drawInfo.Height, &bitmap, &bits, &hdc, &oldBitmap);
 
-    PhInitFormatF(&format[0], (PhCpuKernelUsage + PhCpuUserUsage) * 100, 0);
+    PhInitFormatF(&format[0], ((DOUBLE)PhCpuKernelUsage + PhCpuUserUsage) * 100, 0);
     text = PhFormat(format, 1, 10);
 
     drawInfo.TextColor = PhCsColorCpuKernel;
@@ -1565,7 +1561,7 @@ VOID PhNfpIoUsageTextIconUpdateCallback(
     if (maxValue < (PhIoReadDelta.Delta + PhIoWriteDelta.Delta + PhIoOtherDelta.Delta))
         maxValue = (PhIoReadDelta.Delta + PhIoWriteDelta.Delta + PhIoOtherDelta.Delta);
 
-    PhInitFormatF(&format[0], (FLOAT)(PhIoReadDelta.Delta + PhIoWriteDelta.Delta + PhIoOtherDelta.Delta) / maxValue * 100, 0);
+    PhInitFormatF(&format[0], (DOUBLE)(PhIoReadDelta.Delta + PhIoWriteDelta.Delta + PhIoOtherDelta.Delta) / maxValue * 100, 0);
     text = PhFormat(format, 1, 10);
 
     drawInfo.TextColor = PhCsColorIoReadOther;
@@ -1641,7 +1637,7 @@ VOID PhNfpCommitTextIconUpdateCallback(
 
     Icon->Pointers->BeginBitmap(&drawInfo.Width, &drawInfo.Height, &bitmap, &bits, &hdc, &oldBitmap);
 
-    PhInitFormatF(&format[0], (FLOAT)PhPerfInformation.CommittedPages / PhPerfInformation.CommitLimit * 100, 0);
+    PhInitFormatF(&format[0], (DOUBLE)PhPerfInformation.CommittedPages / PhPerfInformation.CommitLimit * 100, 0);
     text = PhFormat(format, 1, 10);
 
     drawInfo.TextColor = PhCsColorPrivate;
@@ -1693,7 +1689,7 @@ VOID PhNfpPhysicalUsageTextIconUpdateCallback(
     HDC hdc;
     HBITMAP oldBitmap;
     ULONG physicalUsage;
-    FLOAT physicalFraction;
+    DOUBLE physicalFraction;
     PH_FORMAT format[5];
     PPH_STRING text;
 
@@ -1702,9 +1698,9 @@ VOID PhNfpPhysicalUsageTextIconUpdateCallback(
     Icon->Pointers->BeginBitmap(&drawInfo.Width, &drawInfo.Height, &bitmap, &bits, &hdc, &oldBitmap);
 
     physicalUsage = PhSystemBasicInformation.NumberOfPhysicalPages - PhPerfInformation.AvailablePages;
-    physicalFraction = (FLOAT)physicalUsage / PhSystemBasicInformation.NumberOfPhysicalPages;
+    physicalFraction = (DOUBLE)physicalUsage / PhSystemBasicInformation.NumberOfPhysicalPages;
 
-    PhInitFormatF(&format[0], (FLOAT)physicalFraction * 100, 0);
+    PhInitFormatF(&format[0], physicalFraction * 100, 0);
     text = PhFormat(format, 1, 10);
 
     drawInfo.TextColor = PhCsColorPhysical;
@@ -1718,7 +1714,7 @@ VOID PhNfpPhysicalUsageTextIconUpdateCallback(
     // Text
 
     physicalUsage = PhSystemBasicInformation.NumberOfPhysicalPages - PhPerfInformation.AvailablePages;
-    physicalFraction = (FLOAT)physicalUsage / PhSystemBasicInformation.NumberOfPhysicalPages;
+    physicalFraction = (DOUBLE)physicalUsage / PhSystemBasicInformation.NumberOfPhysicalPages;
 
     PhInitFormatS(&format[0], L"Physical memory: ");
     PhInitFormatSize(&format[1], UInt32x32To64(physicalUsage, PAGE_SIZE));
@@ -1729,6 +1725,7 @@ VOID PhNfpPhysicalUsageTextIconUpdateCallback(
     *NewText = PhFormat(format, 5, 96);
 }
 
+_Success_(return)
 BOOLEAN PhNfpGetShowMiniInfoSectionData(
     _In_ ULONG IconIndex,
     _In_ PPH_NF_ICON RegisteredIcon,

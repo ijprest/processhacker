@@ -213,10 +213,10 @@ VOID PhClearLogEntries(
 VOID PhLogProcessEntry(
     _In_ UCHAR Type,
     _In_ HANDLE ProcessId,
-    _In_opt_ HANDLE QueryHandle,
     _In_ PPH_STRING Name,
     _In_opt_ HANDLE ParentProcessId,
-    _In_opt_ PPH_STRING ParentName
+    _In_opt_ PPH_STRING ParentName,
+    _In_opt_ ULONG Status
     );
 
 VOID PhLogServiceEntry(
@@ -300,6 +300,7 @@ VOID PhShowProcessAffinityDialog(
     );
 
 // begin_phapppub
+_Success_(return)
 PHAPPAPI
 BOOLEAN
 NTAPI
@@ -309,6 +310,15 @@ PhShowProcessAffinityDialog2(
     _Out_ PULONG_PTR NewAffinityMask
     );
 // end_phapppub
+
+PHAPPAPI
+VOID
+NTAPI
+PhShowThreadAffinityDialog(
+    _In_ HWND ParentWindowHandle,
+    _In_ PPH_THREAD_ITEM *Threads,
+    _In_ ULONG NumberOfThreads
+    );
 
 // chcol
 
@@ -350,6 +360,7 @@ PhaChoiceDialog(
 // chproc
 
 // begin_phapppub
+_Success_(return)
 PHAPPAPI
 BOOLEAN
 NTAPI

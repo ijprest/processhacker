@@ -35,7 +35,7 @@ BOOLEAN WordMatchStringRef(
 
     while (remainingPart.Length)
     {
-        PhSplitStringRefAtChar(&remainingPart, '|', &part, &remainingPart);
+        PhSplitStringRefAtChar(&remainingPart, L'|', &part, &remainingPart);
 
         if (part.Length)
         {
@@ -70,6 +70,12 @@ BOOLEAN ProcessTreeFilterCallback(
     if (!PhIsNullOrEmptyString(processNode->ProcessItem->ProcessName))
     {
         if (WordMatchStringRef(&processNode->ProcessItem->ProcessName->sr))
+            return TRUE;
+    }
+
+    if (!PhIsNullOrEmptyString(processNode->ProcessItem->FileNameWin32))
+    {
+        if (WordMatchStringRef(&processNode->ProcessItem->FileNameWin32->sr))
             return TRUE;
     }
 

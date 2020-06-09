@@ -1438,7 +1438,7 @@ BOOLEAN PhUiRestartProcess(
     // Start the process.
 
     status = PhCreateProcessWin32(
-        PhGetString(Process->FileName), // we didn't wait for S1 processing
+        PhGetString(Process->FileNameWin32), // we didn't wait for S1 processing
         commandLine->Buffer,
         NULL,
         currentDirectory->Buffer,
@@ -1513,8 +1513,8 @@ BOOLEAN PhUiDebugProcess(
     {
         if (debugger = PH_AUTO(PhQueryRegistryString(keyHandle, L"Debugger")))
         {
-            if (PhSplitStringRefAtChar(&debugger->sr, '"', &dummy, &commandPart) &&
-                PhSplitStringRefAtChar(&commandPart, '"', &commandPart, &dummy))
+            if (PhSplitStringRefAtChar(&debugger->sr, L'"', &dummy, &commandPart) &&
+                PhSplitStringRefAtChar(&commandPart, L'"', &commandPart, &dummy))
             {
                 DebuggerCommand = PhCreateString2(&commandPart);
             }
@@ -1531,9 +1531,9 @@ BOOLEAN PhUiDebugProcess(
 
     PhInitializeStringBuilder(&commandLineBuilder, DebuggerCommand->Length + 30);
 
-    PhAppendCharStringBuilder(&commandLineBuilder, '"');
+    PhAppendCharStringBuilder(&commandLineBuilder, L'"');
     PhAppendStringBuilder(&commandLineBuilder, &DebuggerCommand->sr);
-    PhAppendCharStringBuilder(&commandLineBuilder, '"');
+    PhAppendCharStringBuilder(&commandLineBuilder, L'"');
     PhAppendFormatStringBuilder(&commandLineBuilder, L" -p %lu", HandleToUlong(Process->ProcessId));
 
     status = PhCreateProcessWin32(
@@ -2643,6 +2643,49 @@ BOOLEAN PhUiResumeThreads(
     return success;
 }
 
+BOOLEAN PhUiSetPriorityThreads(
+    _In_ HWND WindowHandle,
+    _In_ PPH_THREAD_ITEM *Threads,
+    _In_ ULONG NumberOfThreads,
+    _In_ LONG Increment
+    )
+{
+    BOOLEAN success = TRUE;
+    ULONG i;
+
+    // Special saturation values
+    if (Increment == THREAD_PRIORITY_TIME_CRITICAL)
+        Increment = THREAD_BASE_PRIORITY_LOWRT + 1;
+    else if (Increment == THREAD_PRIORITY_IDLE)
+        Increment = THREAD_BASE_PRIORITY_IDLE - 1;
+
+    for (i = 0; i < NumberOfThreads; i++)
+    {
+        NTSTATUS status;
+        HANDLE threadHandle;
+
+        if (NT_SUCCESS(status = PhOpenThread(
+            &threadHandle,
+            THREAD_SET_LIMITED_INFORMATION,
+            Threads[i]->ThreadId
+            )))
+        {
+            status = PhSetThreadBasePriority(threadHandle, Increment);
+            NtClose(threadHandle);
+
+            if (!NT_SUCCESS(status))
+            {
+                success = FALSE;
+
+                if (!PhpShowErrorThread(WindowHandle, L"change priority of", Threads[i], status, 0))
+                    break;
+            }
+        }
+    }
+
+    return success;
+}
+
 BOOLEAN PhUiSetPriorityThread(
     _In_ HWND hWnd,
     _In_ PPH_THREAD_ITEM Thread,
@@ -2651,12 +2694,6 @@ BOOLEAN PhUiSetPriorityThread(
 {
     NTSTATUS status;
     HANDLE threadHandle;
-
-    // Special saturation values
-    if (Increment == THREAD_PRIORITY_TIME_CRITICAL)
-        Increment = THREAD_BASE_PRIORITY_LOWRT + 1;
-    else if (Increment == THREAD_PRIORITY_IDLE)
-        Increment = THREAD_BASE_PRIORITY_IDLE - 1;
 
     if (NT_SUCCESS(status = PhOpenThread(
         &threadHandle,

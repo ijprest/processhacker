@@ -3,7 +3,7 @@
  *   process tree list
  *
  * Copyright (C) 2010-2016 wj32
- * Copyright (C) 2016-2019 dmex
+ * Copyright (C) 2016-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -2289,7 +2289,7 @@ BOOLEAN NTAPI PhpProcessTreeNewCallback(
                 getCellText->Text = PhGetStringRef(processItem->VersionInfo.FileVersion);
                 break;
             case PHPRTLC_FILENAME:
-                getCellText->Text = PhGetStringRef(processItem->FileName);
+                getCellText->Text = PhGetStringRef(processItem->FileNameWin32);
                 break;
             case PHPRTLC_COMMANDLINE:
                 getCellText->Text = PhGetStringRef(processItem->CommandLine);
@@ -2826,11 +2826,11 @@ BOOLEAN NTAPI PhpProcessTreeNewCallback(
 
                         if (delta > 0)
                         {
-                            PhInitFormatC(&format[0], '+');
+                            PhInitFormatC(&format[0], L'+');
                         }
                         else
                         {
-                            PhInitFormatC(&format[0], '-');
+                            PhInitFormatC(&format[0], L'-');
                             delta = -delta;
                         }
 
@@ -3613,7 +3613,7 @@ VOID PhpPopulateTableWithProcessNodes(
                 NULL,
                 getCellText.Text.Length + Level * sizeof(WCHAR) * sizeof(WCHAR)
                 );
-            wmemset(text->Buffer, ' ', Level * sizeof(WCHAR));
+            wmemset(text->Buffer, L' ', Level * sizeof(WCHAR));
             memcpy(&text->Buffer[Level * sizeof(WCHAR)], getCellText.Text.Buffer, getCellText.Text.Length);
         }
 

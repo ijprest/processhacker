@@ -341,6 +341,9 @@ VOID NTAPI ShowOptionsCallback(
 {
     PPH_PLUGIN_OPTIONS_POINTERS optionsEntry = (PPH_PLUGIN_OPTIONS_POINTERS)Parameter;
 
+    if (!optionsEntry)
+        return;
+
     optionsEntry->CreateSection(
         L"Notifications - Processes",
         PluginInstance->DllBase,
@@ -371,6 +374,7 @@ VOID NTAPI ShowOptionsCallback(
         );
 }
 
+_Success_(return)
 BOOLEAN MatchFilterList(
     _In_ PPH_LIST FilterList,
     _In_ PPH_STRING String,
@@ -413,10 +417,11 @@ VOID NTAPI NotifyEventCallback(
     PPH_PLUGIN_NOTIFY_EVENT notifyEvent = Parameter;
     PPH_PROCESS_ITEM processItem;
     PPH_SERVICE_ITEM serviceItem;
-    FILTER_TYPE filterType;
+    FILTER_TYPE filterType = FilterExclude;
     BOOLEAN found = FALSE;
 
-    filterType = FilterExclude;
+    if (!notifyEvent)
+        return;
 
     switch (notifyEvent->Type)
     {
@@ -424,8 +429,8 @@ VOID NTAPI NotifyEventCallback(
     case PH_NOTIFY_PROCESS_DELETE:
         processItem = notifyEvent->Parameter;
 
-        if (processItem->FileName)
-            found = MatchFilterList(ProcessFilterList, processItem->FileName, &filterType);
+        if (processItem->FileNameWin32)
+            found = MatchFilterList(ProcessFilterList, processItem->FileNameWin32, &filterType);
 
         if (!found)
             MatchFilterList(ProcessFilterList, processItem->ProcessName, &filterType);

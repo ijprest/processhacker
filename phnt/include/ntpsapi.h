@@ -1,3 +1,23 @@
+/*
+ * Process Hacker -
+ *   Process support functions
+ *
+ * This file is part of Process Hacker.
+ *
+ * Process Hacker is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Process Hacker is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Process Hacker.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #ifndef _NTPSAPI_H
 #define _NTPSAPI_H
 
@@ -91,8 +111,6 @@ typedef struct _WOW64_PROCESS
 } WOW64_PROCESS, *PWOW64_PROCESS;
 
 #include <ntpebteb.h>
-
-// source:http://www.microsoft.com/whdc/system/Sysinternals/MoreThan64proc.mspx
 
 #if (PHNT_MODE != PHNT_MODE_KERNEL)
 typedef enum _PROCESSINFOCLASS
@@ -197,6 +215,8 @@ typedef enum _PROCESSINFOCLASS
     ProcessLeapSecondInformation, // PROCESS_LEAP_SECOND_INFORMATION
     ProcessFiberShadowStackAllocation, // PROCESS_FIBER_SHADOW_STACK_ALLOCATION_INFORMATION // since 19H1
     ProcessFreeFiberShadowStackAllocation, // PROCESS_FREE_FIBER_SHADOW_STACK_ALLOCATION_INFORMATION
+    ProcessAltSystemCallInformation, // since 20H1 // 100
+    ProcessDynamicEHContinuationTargets, // PROCESS_DYNAMIC_EH_CONTINUATION_TARGETS_INFORMATION
     MaxProcessInfoClass
 } PROCESSINFOCLASS;
 #endif
@@ -649,6 +669,7 @@ typedef struct _PROCESS_MITIGATION_POLICY_INFORMATION
         PROCESS_MITIGATION_PAYLOAD_RESTRICTION_POLICY PayloadRestrictionPolicy;
         PROCESS_MITIGATION_CHILD_PROCESS_POLICY ChildProcessPolicy;
         PROCESS_MITIGATION_SIDE_CHANNEL_ISOLATION_POLICY SideChannelIsolationPolicy;
+        PROCESS_MITIGATION_USER_SHADOW_STACK_POLICY UserShadowStackPolicy;
     };
 } PROCESS_MITIGATION_POLICY_INFORMATION, *PPROCESS_MITIGATION_POLICY_INFORMATION;
 
@@ -787,7 +808,6 @@ typedef struct _PROCESS_JOB_MEMORY_INFO
 typedef struct _PROCESS_CHILD_PROCESS_INFORMATION
 {
     BOOLEAN ProhibitChildProcesses;
-    //BOOLEAN EnableAutomaticOverride; // REDSTONE2
     BOOLEAN AlwaysAllowSecureChildProcess; // REDSTONE3
     BOOLEAN AuditProhibitChildProcesses;
 } PROCESS_CHILD_PROCESS_INFORMATION, *PPROCESS_CHILD_PROCESS_INFORMATION;

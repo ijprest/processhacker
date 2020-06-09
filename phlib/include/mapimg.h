@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include <exlf.h>
+#include <exprodid.h>
 
 typedef struct _PH_MAPPED_IMAGE
 {
@@ -453,7 +454,7 @@ typedef struct _PH_MAPPED_IMAGE_TLS_CALLBACKS
         PIMAGE_TLS_DIRECTORY64 TlsDirectory64;
     };
 
-    PVOID CallbackIndexes;
+    //PVOID CallbackIndexes;
     PVOID CallbackAddress;
 
     ULONG NumberOfEntries;
@@ -466,6 +467,88 @@ NTAPI
 PhGetMappedImageTlsCallbacks(
     _Out_ PPH_MAPPED_IMAGE_TLS_CALLBACKS TlsCallbacks,
     _In_ PPH_MAPPED_IMAGE MappedImage
+    );
+
+typedef struct _PH_MAPPED_IMAGE_PRODID_ENTRY
+{
+    USHORT ProductId;
+    USHORT ProductBuild;
+    ULONG ProductCount;
+} PH_MAPPED_IMAGE_PRODID_ENTRY, *PPH_MAPPED_IMAGE_PRODID_ENTRY;
+
+typedef struct _PH_MAPPED_IMAGE_PRODID
+{
+    //WCHAR Key[PH_PTR_STR_LEN_1];
+    BOOLEAN Valid;
+    PPH_STRING Key;
+    PPH_STRING Hash;
+    ULONG NumberOfEntries;
+    PPH_MAPPED_IMAGE_PRODID_ENTRY ProdIdEntries;
+} PH_MAPPED_IMAGE_PRODID, *PPH_MAPPED_IMAGE_PRODID;
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhGetMappedImageProdIdHeader(
+    _In_ PPH_MAPPED_IMAGE MappedImage,
+    _Out_ PPH_MAPPED_IMAGE_PRODID ProdIdHeader
+    );
+
+typedef struct _PH_IMAGE_DEBUG_ENTRY
+{
+    ULONG Characteristics;
+    ULONG TimeDateStamp;
+    USHORT MajorVersion;
+    USHORT MinorVersion;
+    ULONG Type;
+    ULONG SizeOfData;
+    ULONG AddressOfRawData;
+    ULONG PointerToRawData;
+} PH_IMAGE_DEBUG_ENTRY, *PPH_IMAGE_DEBUG_ENTRY;
+
+typedef struct _PH_MAPPED_IMAGE_DEBUG
+{
+    PPH_MAPPED_IMAGE MappedImage;
+    PIMAGE_DATA_DIRECTORY DataDirectory;
+    PIMAGE_DEBUG_DIRECTORY DebugDirectory;
+
+    ULONG NumberOfEntries;
+    PPH_IMAGE_DEBUG_ENTRY DebugEntries;
+} PH_MAPPED_IMAGE_DEBUG, *PPH_MAPPED_IMAGE_DEBUG;
+
+// Note: Remove once they've been added to the Windows SDK. (dmex)
+#ifndef IMAGE_DEBUG_TYPE_EMBEDDEDPORTABLEPDB
+#define IMAGE_DEBUG_TYPE_EMBEDDEDPORTABLEPDB 17
+#endif
+
+#ifndef IMAGE_DEBUG_TYPE_PDBCHECKSUM
+#define IMAGE_DEBUG_TYPE_PDBCHECKSUM 19
+#endif
+
+#ifndef IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS
+#define IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS 20
+#endif
+
+#ifndef IMAGE_DLLCHARACTERISTICS_EX_CET_COMPAT
+#define IMAGE_DLLCHARACTERISTICS_EX_CET_COMPAT 0x0001 // Image is CET compatible.
+#endif
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhGetMappedImageDebug(
+    _In_ PPH_MAPPED_IMAGE MappedImage,
+    _Out_ PPH_MAPPED_IMAGE_DEBUG Debug
+    );
+
+PHLIBAPI
+BOOLEAN
+NTAPI
+PhGetMappedImageDebugEntryByType(
+    _In_ PPH_MAPPED_IMAGE MappedImage,
+    _In_ ULONG Type,
+    _Out_opt_ ULONG* EntryLength,
+    _Out_ PVOID* EntryBuffer
     );
 
 // maplib

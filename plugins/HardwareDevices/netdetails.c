@@ -3,7 +3,7 @@
  *   Hardware Devices Plugin
  *
  * Copyright (C) 2016 wj32
- * Copyright (C) 2015-2019 dmex
+ * Copyright (C) 2015-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -30,7 +30,7 @@ VOID NTAPI NetAdapterProcessesUpdatedHandler(
 {
     PDV_NETADAPTER_DETAILS_CONTEXT context = Context;
 
-    if (context->WindowHandle)
+    if (context && context->WindowHandle)
     {
         PostMessage(context->WindowHandle, UPDATE_MSG, 0, 0);
     }
@@ -333,7 +333,7 @@ VOID NETIOAPI_API_ NetAdapterChangeCallback(
     }
     else if (NotificationType == MibParameterNotification)
     {
-        if (Row->InterfaceLuid.Value = context->AdapterId.InterfaceLuid.Value)
+        if (Row && (Row->InterfaceLuid.Value = context->AdapterId.InterfaceLuid.Value))
         {
             NetAdapterLookupConfig(context);
         }
@@ -353,9 +353,9 @@ VOID NetAdapterUpdateDetails(
 
     if (PhGetIntegerSetting(SETTING_NAME_ENABLE_NDIS))
     {
-        if (NT_SUCCESS(PhCreateFileWin32(
+        if (NT_SUCCESS(PhCreateFile(
             &deviceHandle,
-            PhGetString(Context->AdapterId.InterfaceDevice),
+            PhGetString(Context->AdapterId.InterfacePath),
             FILE_GENERIC_READ,
             FILE_ATTRIBUTE_NORMAL,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -405,7 +405,7 @@ VOID NetAdapterUpdateDetails(
     {
         MIB_IF_ROW2 interfaceRow;
 
-        if (QueryInterfaceRow(&Context->AdapterId, &interfaceRow))
+        if (NetworkAdapterQueryInterfaceRow(&Context->AdapterId, MibIfEntryNormal, &interfaceRow))
         {
             interfaceStats.ifInDiscards = interfaceRow.InDiscards;
             interfaceStats.ifInErrors = interfaceRow.InErrors;

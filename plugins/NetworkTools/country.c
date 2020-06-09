@@ -54,7 +54,7 @@ PPH_STRING NetToolsGetGeoLiteDbPath(
         path = PhaGetStringSetting(SettingName);
         path = PH_AUTO(PhExpandEnvironmentStrings(&path->sr));
 
-        if (RtlDetermineDosPathNameType_U(path->Buffer) == RtlPathTypeRelative)
+        if (PhDetermineDosPathNameType(path->Buffer) == RtlPathTypeRelative)
         {
             directory = PH_AUTO(PhGetApplicationDirectory());
             path = PH_AUTO(PhConcatStringRef2(&directory->sr, &path->sr));
@@ -118,6 +118,7 @@ VOID FreeGeoLiteDb(
     }
 }
 
+_Success_(return)
 BOOLEAN GeoDbGetCityData(
     _In_ MMDB_entry_s* GeoDbEntry,
     _Out_ DOUBLE *CityLatitude,
@@ -154,6 +155,7 @@ BOOLEAN GeoDbGetCityData(
     return FALSE;
 }
 
+_Success_(return)
 BOOLEAN GeoDbGetCountryData(
     _In_ MMDB_entry_s* GeoDbEntry,
     _Out_ PPH_STRING *CountryCode,
@@ -194,6 +196,7 @@ BOOLEAN GeoDbGetCountryData(
     return FALSE;
 }
 
+_Success_(return)
 BOOLEAN GeoDbGetContinentData(
     _In_ MMDB_entry_s* GeoDbEntry,
     _Out_ PPH_STRING *ContinentCode,
@@ -234,6 +237,7 @@ BOOLEAN GeoDbGetContinentData(
     return FALSE;
 }
 
+_Success_(return)
 BOOLEAN LookupCountryCode(
     _In_ PH_IP_ADDRESS RemoteAddress,
     _Out_ PPH_STRING *CountryCode,
@@ -308,6 +312,7 @@ BOOLEAN LookupCountryCode(
     return FALSE;
 }
 
+_Success_(return)
 BOOLEAN LookupSockInAddr4CountryCode(
     _In_ IN_ADDR RemoteAddress,
     _Out_ PPH_STRING *CountryCode,
@@ -348,6 +353,7 @@ BOOLEAN LookupSockInAddr4CountryCode(
     return FALSE;
 }
 
+_Success_(return)
 BOOLEAN LookupSockInAddr6CountryCode(
     _In_ IN6_ADDR RemoteAddress,
     _Out_ PPH_STRING *CountryCode,

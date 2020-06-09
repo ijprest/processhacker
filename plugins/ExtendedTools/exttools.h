@@ -9,7 +9,8 @@
 #include "resource.h"
 
 #include <d3d11.h>
-#include "d3dkmt.h"
+
+#define PH_RECORD_MAX_USAGE 1
 
 extern PPH_PLUGIN PluginInstance;
 extern LIST_ENTRY EtProcessBlockListHead;
@@ -21,7 +22,7 @@ extern ULONG ProcessesUpdatedCount;
 #define PLUGIN_NAME L"ProcessHacker.ExtendedTools"
 #define SETTING_NAME_DISK_TREE_LIST_COLUMNS (PLUGIN_NAME L".DiskTreeListColumns")
 #define SETTING_NAME_DISK_TREE_LIST_SORT (PLUGIN_NAME L".DiskTreeListSort")
-#define SETTING_NAME_ENABLE_D3DKMT (PLUGIN_NAME L".EnableD3DKMT")
+#define SETTING_NAME_ENABLE_GPUPERFCOUNTERS (PLUGIN_NAME L".EnableGpuPerformanceCounters")
 #define SETTING_NAME_ENABLE_DISKEXT (PLUGIN_NAME L".EnableDiskExt")
 #define SETTING_NAME_ENABLE_ETW_MONITOR (PLUGIN_NAME L".EnableEtwMonitor")
 #define SETTING_NAME_ENABLE_GPU_MONITOR (PLUGIN_NAME L".EnableGpuMonitor")
@@ -362,6 +363,7 @@ VOID EtFormatRate(
 // etwmon
 
 extern BOOLEAN EtEtwEnabled;
+extern ULONG EtEtwStatus;
 
 // etwstat
 
@@ -386,6 +388,10 @@ extern PH_CIRCULAR_BUFFER_ULONG EtNetworkReceiveHistory;
 extern PH_CIRCULAR_BUFFER_ULONG EtNetworkSendHistory;
 extern PH_CIRCULAR_BUFFER_ULONG EtMaxDiskHistory;
 extern PH_CIRCULAR_BUFFER_ULONG EtMaxNetworkHistory;
+#ifdef PH_RECORD_MAX_USAGE
+extern PH_CIRCULAR_BUFFER_ULONG64 PhMaxDiskUsageHistory;
+extern PH_CIRCULAR_BUFFER_ULONG64 PhMaxNetworkUsageHistory;
+#endif
 
 VOID EtEtwStatisticsInitialization(
     VOID

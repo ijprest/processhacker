@@ -2,7 +2,7 @@
  * Process Hacker Plugins -
  *   Hardware Devices Plugin
  *
- * Copyright (C) 2015-2018 dmex
+ * Copyright (C) 2015-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -51,7 +51,11 @@ VOID DiskDrivesLoadList(
     PH_STRINGREF remaining;
 
     settingsString = PhaGetStringSetting(SETTING_NAME_DISK_LIST);
-    remaining = settingsString->sr;
+
+    if (PhIsNullOrEmptyString(settingsString))
+        return;
+
+    remaining = PhGetStringRef(settingsString);
 
     while (remaining.Length != 0)
     {
@@ -62,7 +66,11 @@ VOID DiskDrivesLoadList(
         if (remaining.Length == 0)
             break;
 
-        PhSplitStringRefAtChar(&remaining, ',', &part, &remaining);
+        PhSplitStringRefAtChar(&remaining, L',', &part, &remaining);
+
+        // Convert settings path for compatibility. (dmex)
+        if (part.Length > sizeof(UNICODE_NULL) && part.Buffer[1] == OBJ_NAME_PATH_SEPARATOR)
+            part.Buffer[1] = L'?';
 
         InitializeDiskId(&id, PhCreateString2(&part));
         entry = CreateDiskEntry(&id);
@@ -354,14 +362,16 @@ VOID FindDiskDrives(
         if (!QueryDiskDeviceInterfaceDescription(deviceInterface, &deviceInstanceHandle, &deviceDescription))
             continue;
 
-        diskEntry = PhAllocate(sizeof(DISK_ENUM_ENTRY));
-        memset(diskEntry, 0, sizeof(DISK_ENUM_ENTRY));
+        // Convert path now to avoid conversion during every interval update. (dmex)
+        if (deviceInterface[1] == OBJ_NAME_PATH_SEPARATOR)
+            deviceInterface[1] = L'?';
 
-        diskEntry->DeviceIndex = ULONG_MAX; // Note: Do not initialize to zero.
+        diskEntry = PhAllocateZero(sizeof(DISK_ENUM_ENTRY));
+        diskEntry->DeviceIndex = ULONG_MAX;
         diskEntry->DeviceName = PhCreateString2(&deviceDescription->sr);
         diskEntry->DevicePath = PhCreateString(deviceInterface);
 
-        if (NT_SUCCESS(PhCreateFileWin32(
+        if (NT_SUCCESS(PhCreateFile(
             &deviceHandle,
             PhGetString(diskEntry->DevicePath),
             FILE_READ_ATTRIBUTES | SYNCHRONIZE,
@@ -371,7 +381,7 @@ VOID FindDiskDrives(
             FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
             )))
         {
-            ULONG diskIndex = ULONG_MAX; // Note: Do not initialize to zero
+            ULONG diskIndex = ULONG_MAX;
 
             if (NT_SUCCESS(DiskDriveQueryDeviceTypeAndNumber(
                 deviceHandle,
@@ -388,20 +398,31 @@ VOID FindDiskDrives(
 
                 if (!PhIsNullOrEmptyString(diskMountPoints))
                 {
-                    diskEntry->DeviceMountPoints = PhFormatString(
-                        L"Disk %lu (%s) [%s]",
-                        diskIndex,
-                        diskMountPoints->Buffer,
-                        deviceDescription->Buffer
-                        );
+                    PH_FORMAT format[7];
+
+                    // Disk %lu (%s) [%s]
+                    PhInitFormatS(&format[0], L"Disk ");
+                    PhInitFormatU(&format[1], diskIndex);
+                    PhInitFormatS(&format[2], L" (");
+                    PhInitFormatSR(&format[3], diskMountPoints->sr);
+                    PhInitFormatS(&format[4], L") [");
+                    PhInitFormatSR(&format[5], deviceDescription->sr);
+                    PhInitFormatC(&format[6], L']');
+
+                    diskEntry->DeviceMountPoints = PhFormat(format, RTL_NUMBER_OF(format), 0);
                 }
                 else
                 {
-                    diskEntry->DeviceMountPoints = PhFormatString(
-                        L"Disk %lu [%s]",
-                        diskIndex,
-                        deviceDescription->Buffer
-                        );
+                    PH_FORMAT format[5];
+
+                    // Disk %lu (%s)
+                    PhInitFormatS(&format[0], L"Disk ");
+                    PhInitFormatU(&format[1], diskIndex);
+                    PhInitFormatS(&format[2], L" [");
+                    PhInitFormatSR(&format[3], deviceDescription->sr);
+                    PhInitFormatC(&format[4], L']');
+
+                    diskEntry->DeviceMountPoints = PhFormat(format, RTL_NUMBER_OF(format), 0);
                 }
             }
 
@@ -413,7 +434,6 @@ VOID FindDiskDrives(
         PhDereferenceObject(deviceDescription);
     }
 
-    // Cleanup.
     PhFree(deviceInterfaceList);
 
     // Sort the entries
@@ -543,6 +563,9 @@ PPH_STRING FindDiskDeviceInstance(
             continue;
         }
 
+        if (deviceInterface[1] == OBJ_NAME_PATH_SEPARATOR)
+            deviceInterface[1] = L'?';
+
         if (PhEqualStringZ(deviceInterface, DevicePath->Buffer, TRUE))
         {
             deviceInstanceString = PhCreateString(deviceInstanceId);
@@ -596,7 +619,7 @@ VOID LoadDiskDriveImages(
     }
 
     // %SystemRoot%\System32\setupapi.dll,-53
-    PhSplitStringRefAtChar(&deviceDescription->sr, ',', &dllPartSr, &indexPartSr);
+    PhSplitStringRefAtChar(&deviceDescription->sr, L',', &dllPartSr, &indexPartSr);
     PhStringToInteger64(&indexPartSr, 10, &index);
     PhMoveReference(&deviceDescription, PhExpandEnvironmentStrings(&dllPartSr));
 
@@ -628,7 +651,7 @@ INT_PTR CALLBACK DiskDriveOptionsDlgProc(
 
     if (uMsg == WM_INITDIALOG)
     {
-        context = (PDV_DISK_OPTIONS_CONTEXT)PhAllocate(sizeof(DV_DISK_OPTIONS_CONTEXT));
+        context = PhAllocate(sizeof(DV_DISK_OPTIONS_CONTEXT));
         memset(context, 0, sizeof(DV_DISK_OPTIONS_CONTEXT));
 
         PhSetWindowContext(hwndDlg, PH_WINDOW_CONTEXT_DEFAULT, context);
@@ -636,19 +659,6 @@ INT_PTR CALLBACK DiskDriveOptionsDlgProc(
     else
     {
         context = PhGetWindowContext(hwndDlg, PH_WINDOW_CONTEXT_DEFAULT);
-
-        if (uMsg == WM_DESTROY)
-        {
-            PhDeleteLayoutManager(&context->LayoutManager);
-
-            if (context->OptionsChanged)
-                DiskDrivesSaveList();
-
-            FreeListViewDiskDriveEntries(context);
-
-            PhRemoveWindowContext(hwndDlg, PH_WINDOW_CONTEXT_DEFAULT);
-            PhFree(context);
-        }
     }
 
     if (context == NULL)
@@ -676,6 +686,19 @@ INT_PTR CALLBACK DiskDriveOptionsDlgProc(
             FindDiskDrives(context);
 
             context->OptionsChanged = FALSE;
+        }
+        break;
+    case WM_DESTROY:
+        {
+            PhDeleteLayoutManager(&context->LayoutManager);
+
+            if (context->OptionsChanged)
+                DiskDrivesSaveList();
+
+            FreeListViewDiskDriveEntries(context);
+
+            PhRemoveWindowContext(hwndDlg, PH_WINDOW_CONTEXT_DEFAULT);
+            PhFree(context);
         }
         break;
     case WM_SIZE:

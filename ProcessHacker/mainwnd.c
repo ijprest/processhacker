@@ -3,7 +3,7 @@
  *   Main window
  *
  * Copyright (C) 2009-2016 wj32
- * Copyright (C) 2017-2018 dmex
+ * Copyright (C) 2017-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -55,9 +55,6 @@
 #include <sysinfo.h>
 
 #include <mainwndp.h>
-
-#define RUNAS_MODE_ADMIN 1
-#define RUNAS_MODE_LIMITED 2
 
 PHAPPAPI HWND PhMainWndHandle = NULL;
 BOOLEAN PhMainWndExiting = FALSE;
@@ -128,8 +125,8 @@ BOOLEAN PhMainWndInitialization(
         {
             PhAppendStringBuilder2(&stringBuilder, L" [");
             PhAppendStringBuilder(&stringBuilder, &currentUserName->sr);
-            PhAppendCharStringBuilder(&stringBuilder, ']');
-            if (KphIsConnected()) PhAppendCharStringBuilder(&stringBuilder, '+');
+            PhAppendCharStringBuilder(&stringBuilder, L']');
+            if (KphIsConnected()) PhAppendCharStringBuilder(&stringBuilder, L'+');
             PhDereferenceObject(currentUserName);
         }
 
@@ -137,6 +134,10 @@ BOOLEAN PhMainWndInitialization(
             PhAppendStringBuilder2(&stringBuilder, L" (Administrator)");
 
         windowName = PhFinalStringBuilderString(&stringBuilder);
+    }
+    else
+    {
+        PhApplicationName = L" "; // Remove dialog window title when disabled (dmex)
     }
 
     // Create the window.
@@ -164,15 +165,6 @@ BOOLEAN PhMainWndInitialization(
         SendMessage(PhMainWndHandle, WM_SETICON, ICON_BIG, (LPARAM)PH_LOAD_SHARED_ICON_LARGE(PhInstanceHandle, MAKEINTRESOURCE(IDI_PROCESSHACKER)));
     }
 
-    // Create the main menu. (dmex)
-    if (windowMenuHandle = CreateMenu())
-    {
-        // Set the menu first so we're able to get WM_DRAWITEM/WM_MEASUREITEM messages.
-        SetMenu(PhMainWndHandle, windowMenuHandle);
-        PhEMenuToHMenu2(windowMenuHandle, PhpCreateMainMenu(ULONG_MAX), 0, NULL);
-        PhMwpInitializeMainMenu(windowMenuHandle);
-    }
-
     // Choose a more appropriate rectangle for the window.
     PhAdjustRectangleToWorkingArea(PhMainWndHandle, &windowRectangle);
     MoveWindow(
@@ -198,6 +190,17 @@ BOOLEAN PhMainWndInitialization(
     PhLogInitialization();
 
     PhInitializeWindowTheme(PhMainWndHandle, PhEnableThemeSupport); // HACK
+
+    // Create the main menu. This has to be done after initializing the window theme
+    // (subclassing the main window) because Windows 10 doesn't forward WM_MEASUREITEM
+    // messages to window subclasses for menus created with CreateMenu and set with SetMenu
+    // (and only when the DPI is above 100%) unlike previous versions of Windows. (dmex)
+    if (windowMenuHandle = CreateMenu())
+    {
+        SetMenu(PhMainWndHandle, windowMenuHandle);
+        PhEMenuToHMenu2(windowMenuHandle, PhpCreateMainMenu(ULONG_MAX), 0, NULL);
+        PhMwpInitializeMainMenu(windowMenuHandle);
+    }
 
     if (PhEnableThemeSupport && windowMenuHandle)
     {
@@ -451,7 +454,7 @@ VOID PhMwpInitializeControls(
     PhMwpProcessTreeNewHandle = CreateWindow(
         PH_TREENEW_CLASSNAME,
         NULL,
-        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | TN_STYLE_ICONS | TN_STYLE_DOUBLE_BUFFERED | TN_STYLE_ANIMATE_DIVIDER | thinRows | treelistBorder | treelistCustomColors,
+        WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | TN_STYLE_ICONS | TN_STYLE_DOUBLE_BUFFERED | TN_STYLE_ANIMATE_DIVIDER | thinRows | treelistBorder | treelistCustomColors,
         0,
         0,
         3,
@@ -878,7 +881,8 @@ VOID PhMwpOnCommand(
             };
             PVOID fileDialog = PhCreateOpenFileDialog();
 
-            PhSetFileDialogFilter(fileDialog, filters, sizeof(filters) / sizeof(PH_FILETYPE_FILTER));
+            PhSetFileDialogFilter(fileDialog, filters, RTL_NUMBER_OF(filters));
+            PhSetFileDialogOptions(fileDialog, PH_FILEDIALOG_NOPATHVALIDATE);
 
             if (PhShowFileDialog(WindowHandle, fileDialog))
             {
@@ -1198,9 +1202,9 @@ VOID PhMwpOnCommand(
         {
             PPH_PROCESS_ITEM processItem = PhGetSelectedProcessItem();
 
-            if (processItem && processItem->FileName)
+            if (processItem && processItem->FileNameWin32)
             {
-                PhSetStringSetting2(L"RunAsProgram", &processItem->FileName->sr);
+                PhSetStringSetting2(L"RunAsProgram", &processItem->FileNameWin32->sr);
                 PhShowRunAsDialog(WindowHandle, NULL);
             }
         }
@@ -1299,15 +1303,15 @@ VOID PhMwpOnCommand(
             PPH_PROCESS_ITEM processItem = PhGetSelectedProcessItem();
 
             if (processItem && 
-                !PhIsNullOrEmptyString(processItem->FileName) && 
-                PhDoesFileExistsWin32(PhGetString(processItem->FileName)
+                !PhIsNullOrEmptyString(processItem->FileNameWin32) &&
+                PhDoesFileExistsWin32(PhGetString(processItem->FileNameWin32)
                 ))
             {
                 PhReferenceObject(processItem);
                 PhShellExecuteUserString(
                     WindowHandle,
                     L"FileBrowseExecutable",
-                    processItem->FileName->Buffer,
+                    processItem->FileNameWin32->Buffer,
                     FALSE,
                     L"Make sure the Explorer executable file is present."
                     );
@@ -2268,7 +2272,7 @@ PPH_EMENU PhpCreateToolsMenu(
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuItem(0, ID_TOOLS_LIVEDUMP, L"&Create live dump...", NULL, NULL), ULONG_MAX);
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuItem(0, ID_TOOLS_INSPECTEXECUTABLEFILE, L"Inspect e&xecutable file...", NULL, NULL), ULONG_MAX);
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuItem(0, ID_TOOLS_HIDDENPROCESSES, L"&Hidden processes", NULL, NULL), ULONG_MAX);
-    //PhInsertEMenuItem(ToolsMenu, PhCreateEMenuItem(0, ID_TOOLS_PAGEFILES, L"&Pagefiles", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(ToolsMenu, PhCreateEMenuItem(0, ID_TOOLS_PAGEFILES, L"&Pagefiles", NULL, NULL), ULONG_MAX);
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuSeparator(), ULONG_MAX);
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuItem(0, ID_TOOLS_STARTTASKMANAGER, L"Start &Task Manager", NULL, NULL), ULONG_MAX);
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuSeparator(), ULONG_MAX);
@@ -2281,12 +2285,20 @@ PPH_EMENU PhpCreateToolsMenu(
 }
 
 PPH_EMENU PhpCreateUsersMenu(
-    _In_ PPH_EMENU UsersMenu
+    _In_ PPH_EMENU UsersMenu,
+    _In_ BOOLEAN DelayLoadMenu
     )
 {
     PSESSIONIDW sessions;
     ULONG numberOfSessions;
     ULONG i;
+
+    if (DelayLoadMenu)
+    {
+        // Insert a dummy menu so we're able to recieve menu events and delay load winsta.dll functions. (dmex)
+        PhInsertEMenuItem(UsersMenu, PhCreateEMenuItem(0, USHRT_MAX, L" ", NULL, NULL), ULONG_MAX);
+        return UsersMenu;
+    }
 
     if (WinStationEnumerateW(NULL, &sessions, &numberOfSessions))
     {
@@ -2394,7 +2406,7 @@ PPH_EMENU PhpCreateMainMenu(
     case PH_MENU_ITEM_LOCATION_TOOLS:
         return PhpCreateToolsMenu(menu);
     case PH_MENU_ITEM_LOCATION_USERS:
-        return PhpCreateUsersMenu(menu);
+        return PhpCreateUsersMenu(menu, FALSE);
     case PH_MENU_ITEM_LOCATION_HELP:
         return PhpCreateHelpMenu(menu);
     }
@@ -2411,7 +2423,7 @@ PPH_EMENU PhpCreateMainMenu(
     PhInsertEMenuItem(menu, PhpCreateToolsMenu(menuItem), ULONG_MAX);
 
     menuItem = PhCreateEMenuItem(PH_EMENU_MAINMENU, PH_MENU_ITEM_LOCATION_USERS, L"&Users", NULL, NULL);
-    PhInsertEMenuItem(menu, PhpCreateUsersMenu(menuItem), ULONG_MAX);
+    PhInsertEMenuItem(menu, PhpCreateUsersMenu(menuItem, TRUE), ULONG_MAX);
 
     menuItem = PhCreateEMenuItem(PH_EMENU_MAINMENU, PH_MENU_ITEM_LOCATION_HELP, L"H&elp", NULL, NULL);
     PhInsertEMenuItem(menu, PhpCreateHelpMenu(menuItem), ULONG_MAX);
@@ -2429,7 +2441,7 @@ VOID PhMwpInitializeMainMenu(
     memset(&menuInfo, 0, sizeof(MENUINFO));
     menuInfo.cbSize = sizeof(MENUINFO);
     menuInfo.fMask = MIM_STYLE;
-    menuInfo.dwStyle = MNS_NOTIFYBYPOS | MNS_AUTODISMISS;
+    menuInfo.dwStyle = MNS_NOTIFYBYPOS; //| MNS_AUTODISMISS; Flag is unusable on Win10 - Github #547 (dmex).
 
     SetMenuInfo(Menu, &menuInfo);
 
@@ -2739,10 +2751,9 @@ VOID PhMwpInitializeSubMenu(
     else if (Index == PH_MENU_ITEM_LOCATION_VIEW) // View
     {
         PPH_EMENU_ITEM trayIconsMenuItem;
-        ULONG i;
         PPH_EMENU_ITEM menuItem;
-        ULONG id;
-        ULONG placeholderIndex;
+        ULONG id = ULONG_MAX;
+        ULONG placeholderIndex = ULONG_MAX;
 
         if (trayIconsMenuItem = PhFindEMenuItem(Menu, PH_EMENU_FIND_DESCEND, NULL, ID_VIEW_TRAYICONS))
         {
@@ -2751,7 +2762,7 @@ VOID PhMwpInitializeSubMenu(
             PhInsertEMenuItem(trayIconsMenuItem, PhpCreateNotificationMenu(), ULONG_MAX);
             PhInsertEMenuItem(trayIconsMenuItem, PhCreateEMenuSeparator(), ULONG_MAX);
 
-            for (i = 0; i < PhTrayIconItemList->Count; i++)
+            for (ULONG i = 0; i < PhTrayIconItemList->Count; i++)
             {
                 PPH_NF_ICON icon = PhTrayIconItemList->Items[i];
 
@@ -3129,6 +3140,8 @@ VOID PhAddMiniProcessMenuItems(
     if (isPartiallySuspended)
         PhInsertEMenuItem(Menu, PhCreateEMenuItem(0, ID_PROCESS_RESUME, L"Res&ume", NULL, ProcessId), ULONG_MAX);
 
+    PhInsertEMenuItem(Menu, PhCreateEMenuItem(0, ID_PROCESS_RESTART, L"Res&tart", NULL, ProcessId), ULONG_MAX);
+
     PhInsertEMenuItem(Menu, priorityMenu, ULONG_MAX);
 
     if (ioPriorityMenu)
@@ -3148,6 +3161,7 @@ BOOLEAN PhHandleMiniProcessMenuItem(
     case ID_PROCESS_TERMINATE:
     case ID_PROCESS_SUSPEND:
     case ID_PROCESS_RESUME:
+    case ID_PROCESS_RESTART:
     case ID_PROCESS_PROPERTIES:
         {
             HANDLE processId = MenuItem->Context;
@@ -3165,6 +3179,9 @@ BOOLEAN PhHandleMiniProcessMenuItem(
                     break;
                 case ID_PROCESS_RESUME:
                     PhUiResumeProcesses(PhMainWndHandle, &processItem, 1);
+                    break;
+                case ID_PROCESS_RESTART:
+                    PhUiRestartProcess(PhMainWndHandle, processItem);
                     break;
                 case ID_PROCESS_PROPERTIES:
                     ProcessHacker_ShowProcessProperties(PhMainWndHandle, processItem);
@@ -3416,11 +3433,10 @@ VOID PhShowIconContextMenu(
 
 VOID PhShowIconNotification(
     _In_ PWSTR Title,
-    _In_ PWSTR Text,
-    _In_ ULONG Flags
+    _In_ PWSTR Text
     )
 {
-    PhNfShowBalloonTip(Title, Text, 10, Flags);
+    PhNfShowBalloonTip(Title, Text, 10);
 }
 
 VOID PhShowDetailsForIconNotification(

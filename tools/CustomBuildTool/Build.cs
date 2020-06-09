@@ -25,6 +25,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 
 namespace CustomBuildTool
 {
@@ -86,6 +87,7 @@ namespace CustomBuildTool
 
         private static readonly string[] phnt_headers =
         {
+            "ntd3dkmt.h",
             "ntdbg.h",
             "ntexapi.h",
             "ntgdi.h",
@@ -128,6 +130,7 @@ namespace CustomBuildTool
             "dspick.h",
             "emenu.h",
             "exlf.h",
+            "exprodid.h",
             "fastlock.h",
             "filestream.h",
             "graph.h",
@@ -198,7 +201,7 @@ namespace CustomBuildTool
             MSBuildExePath = VisualStudio.GetMsbuildFilePath();
             CustomSignToolPath = VisualStudio.GetCustomSignToolFilePath();
             GitExePath = VisualStudio.GetGitFilePath();
-            BuildNightly = !string.Equals(Environment.ExpandEnvironmentVariables("%APPVEYOR_BUILD_API%"), "%APPVEYOR_BUILD_API%", StringComparison.OrdinalIgnoreCase);
+            BuildNightly = !string.IsNullOrEmpty(Win32.GetEnvironmentVariable("%APPVEYOR_BUILD_API%"));
             
             if (!File.Exists(MSBuildExePath))
             {
@@ -577,6 +580,58 @@ namespace CustomBuildTool
             return true;
         }
 
+        public static bool CopyEtwTraceGuidsFile(BuildFlags Flags)
+        {
+            //Program.PrintColorMessage("Copying ETW tracelog guids file...", ConsoleColor.Cyan);
+
+            try
+            {
+                if (Flags.HasFlag(BuildFlags.BuildDebug))
+                {
+                    if (Flags.HasFlag(BuildFlags.Build32bit))
+                    {
+                        Win32.CopyIfNewer(
+                            "ProcessHacker\\resources\\etwguids.txt",
+                            "bin\\Debug32\\etwguids.txt"
+                            );
+                    }
+
+                    if (Flags.HasFlag(BuildFlags.Build64bit))
+                    {
+                        Win32.CopyIfNewer(
+                            "ProcessHacker\\resources\\etwguids.txt",
+                            "bin\\Debug64\\etwguids.txt"
+                            );
+                    }
+                }
+                else
+                {
+                    if (Flags.HasFlag(BuildFlags.Build32bit))
+                    {
+                        Win32.CopyIfNewer(
+                            "ProcessHacker\\resources\\etwguids.txt",
+                            "bin\\Release32\\etwguids.txt"
+                            );
+                    }
+
+                    if (Flags.HasFlag(BuildFlags.Build64bit))
+                    {
+                        Win32.CopyIfNewer(
+                            "ProcessHacker\\resources\\etwguids.txt",
+                            "bin\\Release64\\etwguids.txt"
+                            );
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Program.PrintColorMessage("[ERROR] " + ex, ConsoleColor.Red);
+                return false;
+            }
+
+            return true;
+        }
+
         public static bool FixupResourceHeader()
         {
             try
@@ -657,7 +712,7 @@ namespace CustomBuildTool
 
             if (BuildNightly && !File.Exists("build\\kph.key"))
             {
-                string kphKey = Environment.ExpandEnvironmentVariables("%KPH_BUILD_KEY%").Replace("%KPH_BUILD_KEY%", string.Empty, StringComparison.OrdinalIgnoreCase);
+                string kphKey = Win32.GetEnvironmentVariable("%KPH_BUILD_KEY%");
 
                 if (!string.IsNullOrEmpty(kphKey))
                 {
@@ -832,7 +887,10 @@ namespace CustomBuildTool
                 if (Directory.Exists("bin\\Release64"))
                     File.Create("bin\\Release64\\ProcessHacker.exe.settings.xml").Dispose();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Program.PrintColorMessage("[WARN] " + ex, ConsoleColor.Yellow);
+            }
 
             try
             {
@@ -846,7 +904,10 @@ namespace CustomBuildTool
                 if (Directory.Exists("bin\\Release64"))
                     File.Create("bin\\Release64\\usernotesdb.xml").Dispose();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Program.PrintColorMessage("[WARN] " + ex, ConsoleColor.Yellow);
+            }
 
             try
             {
@@ -1010,7 +1071,7 @@ namespace CustomBuildTool
 
             if (BuildNightly && !File.Exists("build\\nightly.key"))
             {
-                string buildKey = Environment.ExpandEnvironmentVariables("%NIGHTLY_BUILD_KEY%").Replace("%NIGHTLY_BUILD_KEY%", string.Empty, StringComparison.OrdinalIgnoreCase);
+                string buildKey = Win32.GetEnvironmentVariable("%NIGHTLY_BUILD_KEY%");
 
                 if (!string.IsNullOrEmpty(buildKey))
                 {
@@ -1151,6 +1212,8 @@ namespace CustomBuildTool
             string buildJobId;
             string buildPostUrl;
             string buildPostApiKey;
+            string buildPostSfUrl;
+            string buildPostSfApiKey;
             string buildChangelog;
             string buildSummary;
             string buildMessage;
@@ -1159,15 +1222,21 @@ namespace CustomBuildTool
             if (!BuildNightly)
                 return true;
 
-            buildJobId = Environment.ExpandEnvironmentVariables("%APPVEYOR_JOB_ID%").Replace("%APPVEYOR_JOB_ID%", string.Empty, StringComparison.OrdinalIgnoreCase);
-            buildPostUrl = Environment.ExpandEnvironmentVariables("%APPVEYOR_BUILD_API%").Replace("%APPVEYOR_BUILD_API%", string.Empty, StringComparison.OrdinalIgnoreCase);
-            buildPostApiKey = Environment.ExpandEnvironmentVariables("%APPVEYOR_BUILD_KEY%").Replace("%APPVEYOR_BUILD_KEY%", string.Empty, StringComparison.OrdinalIgnoreCase);
+            buildJobId = Win32.GetEnvironmentVariable("%APPVEYOR_JOB_ID%");
+            buildPostUrl = Win32.GetEnvironmentVariable("%APPVEYOR_BUILD_API%");
+            buildPostApiKey = Win32.GetEnvironmentVariable("%APPVEYOR_BUILD_KEY%");
+            buildPostSfUrl = Win32.GetEnvironmentVariable("%APPVEYOR_BUILD_SF_API%");
+            buildPostSfApiKey = Win32.GetEnvironmentVariable("%APPVEYOR_BUILD_SF_KEY%");
 
             if (string.IsNullOrEmpty(buildJobId))
                 return false;
             if (string.IsNullOrEmpty(buildPostUrl))
                 return false;
             if (string.IsNullOrEmpty(buildPostApiKey))
+                return false;
+            if (string.IsNullOrEmpty(buildPostSfUrl))
+                return false;
+            if (string.IsNullOrEmpty(buildPostSfApiKey))
                 return false;
             if (string.IsNullOrEmpty(BuildVersion))
                 return false;
@@ -1189,7 +1258,7 @@ namespace CustomBuildTool
             // log -n 1 --date=format:%Y-%m-%d --pretty=format:\"[%cd] %an: %<(65,trunc)%s (%h)\" --abbrev-commi
             // log -n 1800 --graph --pretty=format:\"%C(yellow)%h%Creset %C(bold blue)%an%Creset %s %C(dim green)(%cr)\" --abbrev-commit
 
-            buildPostString = Json<BuildUpdateRequest>.Serialize(new BuildUpdateRequest
+            buildPostString = JsonSerializer.Serialize(new BuildUpdateRequest
             {
                 BuildUpdated = TimeStart.ToString("o"),
                 BuildVersion = BuildVersion,
@@ -1208,7 +1277,7 @@ namespace CustomBuildTool
 
                 Message = buildSummary,
                 Changelog = buildChangelog
-            });
+            }, new JsonSerializerOptions { IgnoreNullValues = true, PropertyNameCaseInsensitive = true });
 
             if (string.IsNullOrEmpty(buildPostString))
                 return false;
@@ -1217,23 +1286,57 @@ namespace CustomBuildTool
 
             try
             {
-                using (HttpClient client = new HttpClient())
+                using (HttpClientHandler httpClientHandler = new HttpClientHandler())
                 {
-                    client.DefaultRequestHeaders.Add("X-ApiKey", buildPostApiKey);
+                    httpClientHandler.AutomaticDecompression = DecompressionMethods.All;
 
-                    var httpTask = client.PostAsync(buildPostUrl, new StringContent(buildPostString, Encoding.UTF8, "application/json"));
-                    httpTask.Wait();
-
-                    if (!httpTask.Result.IsSuccessStatusCode)
+                    using (HttpClient httpClient = new HttpClient(httpClientHandler))
+                    using (StringContent httpContent = new StringContent(buildPostString, Encoding.UTF8, "application/json"))
                     {
-                        Program.PrintColorMessage("[UpdateBuildWebService] " + httpTask.Result, ConsoleColor.Red);
-                        return false;
+                        httpClient.DefaultRequestHeaders.Add("X-ApiKey", buildPostApiKey);
+
+                        var httpTask = httpClient.PostAsync(buildPostUrl, httpContent);
+                        httpTask.Wait();
+
+                        if (!httpTask.Result.IsSuccessStatusCode)
+                        {
+                            Program.PrintColorMessage("[UpdateBuildWebService] " + httpTask.Result, ConsoleColor.Red);
+                            return false;
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
                 Program.PrintColorMessage("[UpdateBuildWebService] " + ex, ConsoleColor.Red);
+                return false;
+            }
+
+            try
+            {
+                using (HttpClientHandler httpClientHandler = new HttpClientHandler())
+                {
+                    httpClientHandler.AutomaticDecompression = DecompressionMethods.All;
+
+                    using (HttpClient httpClient = new HttpClient(httpClientHandler))
+                    using (StringContent httpContent = new StringContent(buildPostString, Encoding.UTF8, "application/json"))
+                    {
+                        httpClient.DefaultRequestHeaders.Add("X-ApiKey", buildPostSfApiKey);
+
+                        var httpTask = httpClient.PostAsync(buildPostSfUrl, httpContent);
+                        httpTask.Wait();
+
+                        if (!httpTask.Result.IsSuccessStatusCode)
+                        {
+                            Program.PrintColorMessage("[UpdateBuildWebService-SF] " + httpTask.Result, ConsoleColor.Red);
+                            return false;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Program.PrintColorMessage("[UpdateBuildWebService-SF] " + ex, ConsoleColor.Red);
                 return false;
             }
 
@@ -1250,17 +1353,17 @@ namespace CustomBuildTool
             string buildPostUrl;
             string buildPostKey;
             string buildPostName;
-            string buildBuildUrl;
-            string buildBuildUrlKey;
+            //string buildBuildUrl;
+            //string buildBuildUrlKey;
 
             if (!BuildNightly)
                 return true;
 
-            buildPostUrl = Environment.ExpandEnvironmentVariables("%APPVEYOR_NIGHTLY_URL%").Replace("%APPVEYOR_NIGHTLY_URL%", string.Empty, StringComparison.OrdinalIgnoreCase);
-            buildPostKey = Environment.ExpandEnvironmentVariables("%APPVEYOR_NIGHTLY_KEY%").Replace("%APPVEYOR_NIGHTLY_KEY%", string.Empty, StringComparison.OrdinalIgnoreCase);
-            buildPostName = Environment.ExpandEnvironmentVariables("%APPVEYOR_NIGHTLY_NAME%").Replace("%APPVEYOR_NIGHTLY_NAME%", string.Empty, StringComparison.OrdinalIgnoreCase);
-            buildBuildUrl = Environment.ExpandEnvironmentVariables("%APPVEYOR_BUILD_URL%").Replace("%APPVEYOR_BUILD_URL%", string.Empty, StringComparison.OrdinalIgnoreCase);
-            buildBuildUrlKey = Environment.ExpandEnvironmentVariables("%APPVEYOR_BUILD_URL_KEY%").Replace("%APPVEYOR_BUILD_URL_KEY%", string.Empty, StringComparison.OrdinalIgnoreCase);
+            buildPostUrl = Win32.GetEnvironmentVariable("%APPVEYOR_NIGHTLY_URL%");
+            buildPostKey = Win32.GetEnvironmentVariable("%APPVEYOR_NIGHTLY_KEY%");
+            buildPostName = Win32.GetEnvironmentVariable("%APPVEYOR_NIGHTLY_NAME%");
+            //buildBuildUrl = Win32.GetEnvironmentVariable("%APPVEYOR_BUILD_URL%");
+            //buildBuildUrlKey = Win32.GetEnvironmentVariable("%APPVEYOR_BUILD_URL_KEY%");
 
             if (string.IsNullOrEmpty(buildPostUrl))
                 return false;
@@ -1268,10 +1371,10 @@ namespace CustomBuildTool
                 return false;
             if (string.IsNullOrEmpty(buildPostName))
                 return false;
-            if (string.IsNullOrEmpty(buildBuildUrl))
-                return false;
-            if (string.IsNullOrEmpty(buildBuildUrlKey))
-                return false;
+            //if (string.IsNullOrEmpty(buildBuildUrl))
+            //    return false;
+            //if (string.IsNullOrEmpty(buildBuildUrlKey))
+            //    return false;
 
             try
             {
@@ -1316,43 +1419,48 @@ namespace CustomBuildTool
                 return false;
             }
 
-            try
-            {
-                foreach (string file in Build_Nightly_Files)
-                {
-                    string sourceFile = BuildOutputFolder + file;
-
-                    if (File.Exists(sourceFile))
-                    {
-                        string fileName = Path.GetFileName(sourceFile);
-
-                        using (HttpClient client = new HttpClient())
-                        using (FileStream fileStream = File.OpenRead(sourceFile))
-                        using (StreamContent streamContent = new StreamContent(fileStream))
-                        using (MultipartFormDataContent content = new MultipartFormDataContent())
-                        {
-                            client.DefaultRequestHeaders.Add("X-ApiKey", buildBuildUrlKey);
-                            streamContent.Headers.Add("Content-Type", "application/octet-stream");
-                            streamContent.Headers.Add("Content-Disposition", "form-data; name=\"file\"; filename=\"" + fileName + "\"");
-                            content.Add(streamContent, "file", fileName);
-
-                            var httpTask = client.PostAsync(buildBuildUrl, content);
-                            httpTask.Wait();
-
-                            if (!httpTask.Result.IsSuccessStatusCode)
-                            {
-                                Program.PrintColorMessage("[HttpClient PostAsync] " + httpTask.Result, ConsoleColor.Red);
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Program.PrintColorMessage("[HttpClient PostAsync] " + ex.Message, ConsoleColor.Red);
-                return false;
-            }
+            //try
+            //{
+            //    foreach (string file in Build_Nightly_Files)
+            //    {
+            //        string sourceFile = BuildOutputFolder + file;
+            //
+            //        if (File.Exists(sourceFile))
+            //        {
+            //            string fileName = Path.GetFileName(sourceFile);
+            //
+            //            using (HttpClientHandler httpClientHandler = new HttpClientHandler())
+            //            {
+            //                httpClientHandler.AutomaticDecompression = DecompressionMethods.All;
+            //
+            //                using (HttpClient client = new HttpClient(httpClientHandler))
+            //                using (FileStream fileStream = File.OpenRead(sourceFile))
+            //                using (StreamContent streamContent = new StreamContent(fileStream))
+            //                using (MultipartFormDataContent content = new MultipartFormDataContent())
+            //                {
+            //                    client.DefaultRequestHeaders.Add("X-ApiKey", buildBuildUrlKey);
+            //                    streamContent.Headers.Add("Content-Type", "application/octet-stream");
+            //                    streamContent.Headers.Add("Content-Disposition", "form-data; name=\"file\"; filename=\"" + fileName + "\"");
+            //                    content.Add(streamContent, "file", fileName);
+            //
+            //                    var httpTask = client.PostAsync(buildBuildUrl, content);
+            //                    httpTask.Wait();
+            //
+            //                    if (!httpTask.Result.IsSuccessStatusCode)
+            //                    {
+            //                        Program.PrintColorMessage("[HttpClient PostAsync] " + httpTask.Result, ConsoleColor.Red);
+            //                        return false;
+            //                    }
+            //                }
+            //            }
+            //        }
+            //    }
+            //}
+            //catch (Exception ex)
+            //{
+            //    Program.PrintColorMessage("[HttpClient PostAsync] " + ex.Message, ConsoleColor.Red);
+            //    return false;
+            //}
 
             try
             {

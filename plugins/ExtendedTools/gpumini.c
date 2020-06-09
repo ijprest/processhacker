@@ -3,6 +3,7 @@
  *   GPU mini information section
  *
  * Copyright (C) 2015 wj32
+ * Copyright (C) 2016-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -45,13 +46,23 @@ BOOLEAN EtpGpuListSectionCallback(
     {
     case MiListSectionTick:
         {
-        ListSection->Section->Parameters->SetSectionText(ListSection->Section,
-            PhaFormatString(L"GPU    %.2f%%", EtGpuNodeUsage * 100));
+            PH_FORMAT format[2];
+
+            // GPU    %.2f%%
+            PhInitFormatS(&format[0], L"GPU    ");
+            PhInitFormatF(&format[1], (DOUBLE)EtGpuNodeUsage * 100, 2);
+            PhInitFormatC(&format[0], L'%');
+
+            ListSection->Section->Parameters->SetSectionText(ListSection->Section,
+                PH_AUTO_T(PH_STRING, PhFormat(format, RTL_NUMBER_OF(format), 0)));
         }
         break;
     case MiListSectionSortProcessList:
         {
             PPH_MINIINFO_LIST_SECTION_SORT_LIST sortList = Parameter1;
+
+            if (!sortList)
+                break;
 
             qsort(sortList->List->Items, sortList->List->Count,
                 sizeof(PPH_PROCESS_NODE), EtpGpuListSectionProcessCompareFunction);
@@ -60,9 +71,15 @@ BOOLEAN EtpGpuListSectionCallback(
     case MiListSectionAssignSortData:
         {
             PPH_MINIINFO_LIST_SECTION_ASSIGN_SORT_DATA assignSortData = Parameter1;
-            PPH_LIST processes = assignSortData->ProcessGroup->Processes;
-            FLOAT gpuUsage = 0;
+            PPH_LIST processes;
+            FLOAT gpuUsage;
             ULONG i;
+
+            if (!assignSortData)
+                break;
+
+            processes = assignSortData->ProcessGroup->Processes;
+            gpuUsage = 0;
 
             for (i = 0; i < processes->Count; i++)
             {
@@ -78,6 +95,9 @@ BOOLEAN EtpGpuListSectionCallback(
         {
             PPH_MINIINFO_LIST_SECTION_SORT_LIST sortList = Parameter1;
 
+            if (!sortList)
+                break;
+
             qsort(sortList->List->Items, sortList->List->Count,
                 sizeof(PPH_MINIINFO_LIST_SECTION_SORT_DATA), EtpGpuListSectionNodeCompareFunction);
         }
@@ -85,10 +105,21 @@ BOOLEAN EtpGpuListSectionCallback(
     case MiListSectionGetUsageText:
         {
             PPH_MINIINFO_LIST_SECTION_GET_USAGE_TEXT getUsageText = Parameter1;
-            PPH_LIST processes = getUsageText->ProcessGroup->Processes;
-            FLOAT gpuUsage = *(PFLOAT)getUsageText->SortData->UserData;
+            PPH_LIST processes;
+            FLOAT gpuUsage;
+            PH_FORMAT format[2];
 
-            PhMoveReference(&getUsageText->Line1, PhFormatString(L"%.2f%%", gpuUsage * 100));
+            if (!getUsageText)
+                break;
+
+            processes = getUsageText->ProcessGroup->Processes;
+            gpuUsage = *(PFLOAT)getUsageText->SortData->UserData;
+
+            // %.2f%%
+            PhInitFormatF(&format[0], (DOUBLE)gpuUsage * 100, 2);
+            PhInitFormatC(&format[1], L'%');
+
+            PhMoveReference(&getUsageText->Line1, PhFormat(format, RTL_NUMBER_OF(format), 0));
         }
         return TRUE;
     }

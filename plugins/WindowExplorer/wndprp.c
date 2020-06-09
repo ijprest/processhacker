@@ -91,12 +91,14 @@ typedef enum _NETADAPTER_DETAILS_INDEX
     WINDOW_PROPERTIES_INDEX_MENUHANDLE,
     WINDOW_PROPERTIES_INDEX_USERDATA,
     WINDOW_PROPERTIES_INDEX_UNICODE,
+    WINDOW_PROPERTIES_INDEX_WNDEXTRA,
     WINDOW_PROPERTIES_INDEX_WNDPROC,
     WINDOW_PROPERTIES_INDEX_DLGPROC,
     WINDOW_PROPERTIES_INDEX_DLGCTLID,
     WINDOW_PROPERTIES_INDEX_FONTNAME,
     WINDOW_PROPERTIES_INDEX_STYLES,
     WINDOW_PROPERTIES_INDEX_EXSTYLES,
+    WINDOW_PROPERTIES_INDEX_AUTOMATION,
 
     WINDOW_PROPERTIES_INDEX_CLASS_NAME,
     WINDOW_PROPERTIES_INDEX_CLASS_ATOM,
@@ -129,6 +131,13 @@ INT_PTR CALLBACK WepWindowPropertiesDlgProc(
     );
 
 INT_PTR CALLBACK WepWindowPropStoreDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK WepWindowPreviewDlgProc(
     _In_ HWND hwndDlg,
     _In_ UINT uMsg,
     _In_ WPARAM wParam,
@@ -272,7 +281,7 @@ NTSTATUS WepPropertiesThreadStart(
 
     PhInitializeAutoPool(&autoPool);
 
-    if (propContext = HdCreatePropContext(PhaFormatString(L"Window %Ix", context->WindowHandle)->Buffer))
+    if (propContext = HdCreatePropContext(PhaFormatString(L"Window %Ix", (ULONG_PTR)context->WindowHandle)->Buffer))
     {
         PPV_PROPPAGECONTEXT newPage;
 
@@ -297,6 +306,13 @@ NTSTATUS WepPropertiesThreadStart(
             context);
         PvAddPropPage(propContext, newPage);
 
+        // Preview page
+        newPage = PvCreatePropPageContext(
+            MAKEINTRESOURCE(IDD_WNDPREVIEW),
+            WepWindowPreviewDlgProc,
+            context);
+        PvAddPropPage(propContext, newPage);
+
         PhModalPropertySheet(&propContext->PropSheetHeader);
         PhDereferenceObject(propContext);
     }
@@ -314,6 +330,9 @@ BOOLEAN NTAPI EnumGenericModulesCallback(
     )
 {
     PWINDOW_PROPERTIES_CONTEXT context = Context;
+
+    if (!context)
+        return FALSE;
 
     PhLoadModuleSymbolProvider(context->SymbolProvider, Module->FileName->Buffer,
         (ULONG64)Module->BaseAddress, Module->Size);
@@ -458,12 +477,14 @@ VOID WepRefreshWindowGeneralInfo(
     PVOID instanceHandle;
     PVOID userdataHandle;
     ULONG windowId;
+    ULONG windowExtra;
     HFONT fontHandle;
 
     menuHandle = GetMenu(Context->WindowHandle);
     instanceHandle = (PVOID)GetWindowLongPtr(Context->WindowHandle, GWLP_HINSTANCE);
     userdataHandle = (PVOID)GetWindowLongPtr(Context->WindowHandle, GWLP_USERDATA);
     windowId = (ULONG)GetWindowLongPtr(Context->WindowHandle, GWLP_ID);
+    windowExtra = (ULONG)GetClassLongPtr(Context->WindowHandle, GCL_CBWNDEXTRA);
     // TODO: GetWindowLongPtr(Context->WindowHandle, GCLP_WNDPROC);
 
     PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_TEXT, 1, PhGetStringOrEmpty(PH_AUTO(PhGetWindowText(Context->WindowHandle))));
@@ -513,7 +534,7 @@ VOID WepRefreshWindowGeneralInfo(
     {
         PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_INSTANCE, 1, PhaFormatString(
             L"0x%Ix (%s)", 
-            instanceHandle,
+            (ULONG_PTR)instanceHandle,
             PhGetStringOrEmpty(fileName)
             )->Buffer);
         PhDereferenceObject(fileName);
@@ -522,13 +543,14 @@ VOID WepRefreshWindowGeneralInfo(
     {
         PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_INSTANCE, 1, PhaFormatString(
             L"0x%Ix", 
-            instanceHandle
+            (ULONG_PTR)instanceHandle
             )->Buffer);
     }
 
-    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_MENUHANDLE, 1, PhaFormatString(L"0x%Ix", menuHandle)->Buffer);
-    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_USERDATA, 1, PhaFormatString(L"0x%Ix", userdataHandle)->Buffer);
+    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_MENUHANDLE, 1, PhaFormatString(L"0x%Ix", (ULONG_PTR)menuHandle)->Buffer);
+    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_USERDATA, 1, PhaFormatString(L"0x%Ix", (ULONG_PTR)userdataHandle)->Buffer);
     PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_UNICODE, 1, IsWindowUnicode(Context->WindowHandle) ? L"Yes" : L"No");
+    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_WNDEXTRA, 1, PhaFormatSize(windowExtra, ULONG_MAX)->Buffer);
     PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_DLGCTLID, 1, PhaFormatString(L"%lu", windowId)->Buffer);
 
     if (fontHandle = (HFONT)SendMessage(Context->WindowHandle, WM_GETFONT, 0, 0))
@@ -713,7 +735,7 @@ VOID WepRefreshClassModule(
     {
         PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_INSTANCE, 1, PhaFormatString(
             L"0x%Ix (%s)",
-            instanceHandle,
+            (ULONG_PTR)instanceHandle,
             PhGetStringOrEmpty(fileName)
             )->Buffer);
         PhDereferenceObject(fileName);
@@ -722,7 +744,7 @@ VOID WepRefreshClassModule(
     {
         PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_INSTANCE, 1, PhaFormatString(
             L"0x%Ix",
-            instanceHandle
+            (ULONG_PTR)instanceHandle
             )->Buffer);
     }
 }
@@ -736,14 +758,14 @@ VOID WepRefreshWindowClassInfoSymbols(
     {
         PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_WNDPROC, 1, PhaFormatString(
             L"0x%Ix (resolving...)",
-            Context->ClassInfo.lpfnWndProc
+            (ULONG_PTR)Context->ClassInfo.lpfnWndProc
             )->Buffer);
     }
     else if (Context->ClassWndProcSymbol)
     {
         PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_WNDPROC, 1, PhaFormatString(
             L"0x%Ix (%s)",
-            Context->ClassInfo.lpfnWndProc,
+            (ULONG_PTR)Context->ClassInfo.lpfnWndProc,
             Context->ClassWndProcSymbol->Buffer
             )->Buffer);
     }
@@ -751,7 +773,7 @@ VOID WepRefreshWindowClassInfoSymbols(
     {
         PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_WNDPROC, 1, PhaFormatString(
             L"0x%Ix",
-            Context->ClassInfo.lpfnWndProc
+            (ULONG_PTR)Context->ClassInfo.lpfnWndProc
             )->Buffer);
     }
     else
@@ -775,12 +797,12 @@ VOID WepRefreshWindowClassInfo(
     GetClassInfoEx(NULL, className, &Context->ClassInfo);
 
     PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_NAME, 1, className);
-    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_ATOM, 1, PhaFormatString(L"0x%x", GetClassWord(Context->WindowHandle, GCW_ATOM))->Buffer);
-    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_LARGEICON, 1, PhaFormatString(L"0x%Ix", Context->ClassInfo.hIcon)->Buffer);
-    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_SMALLICON, 1, PhaFormatString(L"0x%Ix", Context->ClassInfo.hIconSm)->Buffer);
-    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_MENUNAME, 1, PhaFormatString(L"0x%Ix", Context->ClassInfo.lpszMenuName)->Buffer);
-    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_CURSOR, 1, PhaFormatString(L"0x%Ix", Context->ClassInfo.hCursor)->Buffer);
-    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_BACKBRUSH, 1, PhaFormatString(L"0x%Ix", Context->ClassInfo.hbrBackground)->Buffer);
+    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_ATOM, 1, PhaFormatString(L"0x%Ix", GetClassLongPtr(Context->WindowHandle, GCW_ATOM))->Buffer);
+    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_LARGEICON, 1, PhaFormatString(L"0x%Ix", (ULONG_PTR)Context->ClassInfo.hIcon)->Buffer);
+    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_SMALLICON, 1, PhaFormatString(L"0x%Ix", (ULONG_PTR)Context->ClassInfo.hIconSm)->Buffer);
+    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_MENUNAME, 1, PhaFormatString(L"0x%Ix", (ULONG_PTR)Context->ClassInfo.lpszMenuName)->Buffer);
+    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_CURSOR, 1, PhaFormatString(L"0x%Ix", (ULONG_PTR)Context->ClassInfo.hCursor)->Buffer);
+    PhSetListViewSubItem(ListViewHandle, WINDOW_PROPERTIES_INDEX_CLASS_BACKBRUSH, 1, PhaFormatString(L"0x%Ix", (ULONG_PTR)Context->ClassInfo.hbrBackground)->Buffer);
 
     WepRefreshClassStyles(ListViewHandle, Context);
     WepRefreshClassModule(ListViewHandle, Context);
@@ -792,6 +814,43 @@ VOID WepRefreshWindowClassInfo(
     }
 
     WepRefreshWindowClassInfoSymbols(ListViewHandle, Context);
+}
+
+static BOOLEAN WepWindowHasAutomationProvider(
+    _In_ HWND WindowHandle
+    )
+{
+    static PH_INITONCE initOnce = PH_INITONCE_INIT;
+    static BOOL (WINAPI *UiaHasServerSideProvider_I)(
+        _In_ HWND WindowHandle
+        );
+
+    if (PhBeginInitOnce(&initOnce))
+    {
+        HANDLE moduleHandle;
+
+        if (moduleHandle = LoadLibrary(L"uiautomationcore.dll"))
+        {
+            UiaHasServerSideProvider_I = PhGetProcedureAddress(moduleHandle, "UiaHasServerSideProvider", 0);
+        }
+
+        PhEndInitOnce(&initOnce);
+    }
+
+    if (!UiaHasServerSideProvider_I)
+        return FALSE;
+
+    return !!UiaHasServerSideProvider_I(WindowHandle);
+}
+
+VOID WepRefreshAutomationProvider(
+    _In_ PWINDOW_PROPERTIES_CONTEXT Context
+    )
+{
+    if (WepWindowHasAutomationProvider(Context->WindowHandle))
+        PhSetListViewSubItem(Context->ListViewHandle, WINDOW_PROPERTIES_INDEX_AUTOMATION, 1, L"Yes");
+    else
+        PhSetListViewSubItem(Context->ListViewHandle, WINDOW_PROPERTIES_INDEX_AUTOMATION, 1, L"No");
 }
 
 VOID WepGeneralAddListViewItemGroups(
@@ -812,12 +871,15 @@ VOID WepGeneralAddListViewItemGroups(
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_MENUHANDLE, L"Menu handle", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_USERDATA, L"User data", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_UNICODE, L"Unicode", NULL);
+    PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_WNDEXTRA, L"Window extra bytes", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_WNDPROC, L"Window procedure", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_DLGPROC, L"Dialog procedure", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_DLGCTLID, L"Dialog control ID", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_FONTNAME, L"Font", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_STYLES, L"Styles", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_EXSTYLES, L"Extended styles", NULL);
+    PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_GENERAL, WINDOW_PROPERTIES_INDEX_AUTOMATION, L"Automation server", NULL);
+
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_CLASS, WINDOW_PROPERTIES_INDEX_CLASS_NAME, L"Name", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_CLASS, WINDOW_PROPERTIES_INDEX_CLASS_ATOM, L"Atom", NULL);
     PhAddListViewGroupItem(ListViewHandle, WINDOW_PROPERTIES_CATEGORY_CLASS, WINDOW_PROPERTIES_INDEX_CLASS_STYLES, L"Styles", NULL);
@@ -873,6 +935,7 @@ INT_PTR CALLBACK WepWindowGeneralDlgProc(
             WepRefreshWindowGeneralInfo(hwndDlg, context->ListViewHandle, context);
             WepRefreshWindowStyles(context->ListViewHandle, context);
             WepRefreshWindowClassInfo(hwndDlg, context->ListViewHandle, context);
+            WepRefreshAutomationProvider(context);
 
             if (!!PhGetIntegerSetting(L"EnableThemeSupport")) // TODO: Required for compat (dmex)
                 PhInitializeWindowTheme(GetParent(hwndDlg), !!PhGetIntegerSetting(L"EnableThemeSupport"));
@@ -1030,7 +1093,7 @@ BOOL CALLBACK EnumPropsExCallback(
     {
         PPH_STRING propName;
 
-        propName = PhFormatString(L"#%lu", (ULONG_PTR)lpszString);
+        propName = PhFormatString(L"#%hu", (USHORT)lpszString);
         lvItemIndex = PhAddListViewItem((HWND)dwData, MAXINT, propName->Buffer, NULL);
         PhDereferenceObject(propName);
     }
@@ -1384,6 +1447,232 @@ INT_PTR CALLBACK WepWindowPropStoreDlgProc(
 
                 PhFree(listviewItems);
             }
+        }
+        break;
+    }
+
+    return FALSE;
+}
+
+// https://docs.microsoft.com/en-us/windows/win32/dwm/dwmdxgetwindowsharedsurface
+HRESULT (WINAPI* DwmDxGetWindowSharedSurface_I)(
+    _In_ HWND WindowHandle,
+    _In_ LUID luidAdapter,
+    _In_opt_ HMONITOR hmonitorAssociation,
+    _In_ ULONG Flags,
+    _Inout_ ULONG* pfmtWindow, // DXGI_FORMAT
+    _Out_ HANDLE* phDxSurface,
+    _Out_ UINT64* puiUpdateId
+    );
+
+// https://docs.microsoft.com/en-us/windows/win32/dwm/dwmdxupdatewindowsharedsurface
+HRESULT (WINAPI* DwmDxUpdateWindowSharedSurface_I)(
+    _In_ HWND WindowHandle,
+    _In_ UINT64 uiUpdateId,
+    _In_ ULONG dwFlags,
+    _In_opt_ HMONITOR hmonitorAssociation,
+    _In_ RECT* prc
+    );
+
+// rev
+BOOL (WINAPI* DwmGetDxSharedSurface_I)(
+    _In_ HWND WindowHandle,
+    _Out_ HANDLE* phDxSurface,
+    _Out_ LUID* pluidAdapter,
+    _Out_ ULONG* pfmtWindow, // DXGI_FORMAT
+    _Out_ ULONG* pPresentFlags,
+    _Out_ UINT64* puiUpdateId
+    );
+
+// rev
+HBITMAP (WINAPI* CreateBitmapFromDxSurface_I)(
+    _In_ HDC hdc,
+    _In_ UINT32 Width,
+    _In_ UINT32 Height,
+    _In_ ULONG pfmtWindow, // DXGI_FORMAT
+    _In_opt_ HANDLE phDxSurface
+    );
+
+HBITMAP WepGetWindowSharedSurface(
+    _In_ HWND WindowHandle,
+    _In_ HDC WindowHdc
+    )
+{
+    HBITMAP bitmapHandle = NULL;
+    HANDLE surfaceHandle = NULL;
+    LUID adapterLuid;
+    ULONG bitmapFormat = 0;
+    ULONG presentFlags = 0;
+    UINT64 updateId = 0;
+
+    if (!DwmGetDxSharedSurface_I)
+        DwmGetDxSharedSurface_I = PhGetModuleProcAddress(L"user32.dll", "DwmGetDxSharedSurface");
+    if (!CreateBitmapFromDxSurface_I)
+        CreateBitmapFromDxSurface_I = PhGetModuleProcAddress(L"gdi32.dll", "CreateBitmapFromDxSurface");
+
+    if (!DwmGetDxSharedSurface_I)
+        return NULL;
+    if (!CreateBitmapFromDxSurface_I)
+        return NULL;
+
+    if (DwmGetDxSharedSurface_I(
+        WindowHandle,
+        &surfaceHandle,
+        &adapterLuid,
+        &bitmapFormat,
+        &presentFlags,
+        &updateId
+        ))
+    {
+        RECT windowRect;
+
+        GetWindowRect(WindowHandle, &windowRect); // TODO: Include dwm window borders.
+
+        bitmapHandle = CreateBitmapFromDxSurface_I(
+            WindowHdc,
+            windowRect.right,
+            windowRect.bottom,
+            bitmapFormat,
+            surfaceHandle
+            );
+    }
+
+    return bitmapHandle;
+}
+
+INT_PTR CALLBACK WepWindowPreviewDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    )
+{
+    PWINDOW_PROPERTIES_CONTEXT context;
+    LPPROPSHEETPAGE propSheetPage;
+    PPV_PROPPAGECONTEXT propPageContext;
+
+    if (!PvPropPageDlgProcHeader(hwndDlg, uMsg, lParam, &propSheetPage, &propPageContext))
+        return FALSE;
+
+    context = (PWINDOW_PROPERTIES_CONTEXT)propPageContext->Context;
+
+    if (!context)
+        return FALSE;
+
+    switch (uMsg)
+    {
+    case WM_INITDIALOG:
+        {
+            HWND lvHandle;
+
+            lvHandle = GetDlgItem(hwndDlg, IDC_LIST);
+            PhSetListViewStyle(lvHandle, FALSE, TRUE);
+            PhSetControlTheme(lvHandle, L"explorer");
+
+            PhAddListViewColumn(lvHandle, 0, 0, 0, LVCFMT_LEFT, 160, L"Name");
+            PhAddListViewColumn(lvHandle, 1, 1, 1, LVCFMT_LEFT, 100, L"Value");
+            PhSetExtendedListView(lvHandle);
+
+            PhInitializeWindowTheme(hwndDlg, !!PhGetIntegerSetting(L"EnableThemeSupport"));
+
+            SetTimer(hwndDlg, 1, 1000, NULL);
+        }
+        break;
+    case WM_DESTROY:
+        {
+            NOTHING;
+        }
+        break;
+    case WM_SHOWWINDOW:
+        {
+            if (!propPageContext->LayoutInitialized)
+            {
+                PPH_LAYOUT_ITEM dialogItem;
+
+                dialogItem = PvAddPropPageLayoutItem(hwndDlg, hwndDlg, PH_PROP_PAGE_TAB_CONTROL_PARENT, PH_ANCHOR_ALL);
+                PvAddPropPageLayoutItem(hwndDlg, GetDlgItem(hwndDlg, IDC_LIST), dialogItem, PH_ANCHOR_ALL);
+                PvDoPropPageLayout(hwndDlg);
+
+                propPageContext->LayoutInitialized = TRUE;
+            }
+        }
+        break;
+    case WM_ERASEBKGND:
+        return TRUE;
+    case WM_PAINT:
+        {
+            PAINTSTRUCT paint;
+            HDC hdc;
+            HDC bufferDc;
+            RECT clientRect;
+            RECT windowClientRect;
+            HBITMAP bitmap;
+
+            GetClientRect(hwndDlg, &clientRect);
+            GetClientRect(context->WindowHandle, &windowClientRect);
+
+            hdc = BeginPaint(hwndDlg, &paint);
+            bufferDc = CreateCompatibleDC(hdc);
+
+            SetBkMode(hdc, TRANSPARENT);
+            FillRect(hdc, &clientRect, GetStockBrush(BLACK_BRUSH));
+
+            if (bitmap = WepGetWindowSharedSurface(context->WindowHandle, hdc))
+            {
+                HBITMAP oldbitmap;
+                INT width;
+                INT height;
+
+                oldbitmap = SelectBitmap(bufferDc, bitmap);
+
+                if (clientRect.right > windowClientRect.right)
+                    width = windowClientRect.right;
+                else
+                    width = clientRect.right;
+
+                if (clientRect.bottom > windowClientRect.bottom)
+                    height = windowClientRect.bottom;
+                else
+                    height = clientRect.bottom;
+
+                StretchBlt(
+                    hdc,
+                    0, 0,
+                    width,
+                    height,
+                    bufferDc,
+                    0, 0,
+                    windowClientRect.right,
+                    windowClientRect.bottom,
+                    SRCCOPY
+                    );
+
+                SelectBitmap(bufferDc, oldbitmap);
+                DeleteBitmap(bitmap);
+            }
+            else
+            {
+                PH_STRINGREF errorText = PH_STRINGREF_INIT(L"No preview available for this window.");
+
+                SetTextColor(hdc, RGB(0x0, 0x0, 0xFF));
+                //SelectFont(hdc, PhApplicationFont);
+                DrawText(
+                    hdc,
+                    errorText.Buffer,
+                    (INT)errorText.Length / sizeof(WCHAR),
+                    &clientRect,
+                    DT_CENTER | DT_VCENTER | DT_NOPREFIX | DT_SINGLELINE
+                    );
+            }
+
+            DeleteDC(bufferDc);
+
+            EndPaint(hwndDlg, &paint);
+        }
+        return TRUE;
+    case WM_TIMER:
+        {
+            InvalidateRect(hwndDlg, NULL, TRUE);
         }
         break;
     }

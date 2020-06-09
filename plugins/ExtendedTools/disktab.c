@@ -3,7 +3,7 @@
  *   ETW disk monitoring
  *
  * Copyright (C) 2011-2015 wj32
- * Copyright (C) 2018-2019 dmex
+ * Copyright (C) 2018-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -32,6 +32,7 @@ static HWND DiskTreeNewHandle = NULL;
 static ULONG DiskTreeNewSortColumn = 0;
 static PH_SORT_ORDER DiskTreeNewSortOrder = NoSortOrder;
 static PH_STRINGREF DiskTreeEmptyText = PH_STRINGREF_INIT(L"Disk monitoring requires Process Hacker to be restarted with administrative privileges.");
+static PPH_STRING DiskTreeErrorText = NULL;
 
 static PPH_HASHTABLE DiskNodeHashtable = NULL; // hashtable of all nodes
 static PPH_LIST DiskNodeList = NULL; // list of all nodes
@@ -124,8 +125,7 @@ BOOLEAN EtpDiskPageCallback(
 
             if (PhGetIntegerSetting(L"EnableThemeSupport"))
             {
-                // HACK (dmex)
-                PhInitializeThemeWindowHeader(TreeNew_GetHeader(hwnd));
+                PhInitializeThemeWindowHeader(TreeNew_GetHeader(hwnd)); // HACK (dmex)
                 TreeNew_ThemeSupport(hwnd, TRUE);
             }
             
@@ -142,7 +142,37 @@ BOOLEAN EtpDiskPageCallback(
             EtInitializeDiskTreeList(hwnd);
 
             if (!EtEtwEnabled)
-                TreeNew_SetEmptyText(hwnd, &DiskTreeEmptyText, 0);
+            {
+                if (EtEtwStatus != ERROR_SUCCESS)
+                {
+                    PPH_STRING statusMessage;
+
+                    if (statusMessage = PhGetStatusMessage(0, EtEtwStatus))
+                    {
+                        DiskTreeErrorText = PhFormatString(
+                            L"%s %s (%lu)",
+                            L"Unable to start the kernel event tracing session: ",
+                            statusMessage->Buffer,
+                            EtEtwStatus
+                            );
+                        PhDereferenceObject(statusMessage);
+                    }
+                    else
+                    {
+                        DiskTreeErrorText = PhFormatString(
+                            L"%s (%lu)",
+                            L"Unable to start the kernel event tracing session: ",
+                            EtEtwStatus
+                            );
+                    }
+
+                    TreeNew_SetEmptyText(hwnd, &DiskTreeErrorText->sr, 0);
+                }
+                else
+                {
+                    TreeNew_SetEmptyText(hwnd, &DiskTreeEmptyText, 0);
+                }
+            }
 
             PhInitializeProviderEventQueue(&EtpDiskEventQueue, 100);
 
@@ -175,7 +205,10 @@ BOOLEAN EtpDiskPageCallback(
             EtInitializeDiskInformation();
             SetCursor(LoadCursor(NULL, IDC_ARROW));
 
-            *(HWND *)Parameter1 = hwnd;
+            if (Parameter1)
+            {
+                *(HWND*)Parameter1 = hwnd;
+            }
         }
         return TRUE;
     case MainTabPageLoadSettings:
@@ -670,7 +703,7 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
 
             if (!PhIsNullOrEmptyString(node->TooltipText))
             {
-                getCellTooltip->Text = node->TooltipText->sr;
+                getCellTooltip->Text = PhGetStringRef(node->TooltipText);
                 getCellTooltip->Unfolding = FALSE;
                 getCellTooltip->MaximumWidth = ULONG_MAX;
             }
@@ -907,7 +940,7 @@ VOID EtHandleDiskCommand(
                 }
                 else
                 {
-                    PhShowError(PhMainWndHandle, L"The process does not exist.");
+                    PhShowError2(PhMainWndHandle, L"Unable to select the process.", L"The process does not exist.");
                 }
 
                 PhDereferenceObject(diskItem);
@@ -920,7 +953,20 @@ VOID EtHandleDiskCommand(
 
             if (diskItem)
             {
-                PhShellExploreFile(PhMainWndHandle, diskItem->FileNameWin32->Buffer);
+                ULONG_PTR streamIndex;
+                PPH_STRING fileName;
+
+                // Strip ADS from path (dmex)
+                fileName = PhReferenceObject(diskItem->FileNameWin32);
+                streamIndex = PhFindLastCharInStringRef(&fileName->sr, L':', FALSE);
+
+                if (streamIndex != -1 && streamIndex != 1)
+                {
+                    PhMoveReference(&fileName, PhSubstring(fileName, 0, streamIndex));
+                }
+
+                PhShellExploreFile(PhMainWndHandle, fileName->Buffer);
+                PhDereferenceObject(fileName);
             }
         }
         break;
@@ -929,13 +975,59 @@ VOID EtHandleDiskCommand(
             EtCopyDiskList();
         }
         break;
+    case ID_DISK_INSPECT:
+        {
+            PET_DISK_ITEM diskItem = EtGetSelectedDiskItem();
+
+            if (diskItem)
+            {
+                ULONG_PTR streamIndex;
+                PPH_STRING fileName;
+
+                // Strip ADS from path (dmex)
+                fileName = PhReferenceObject(diskItem->FileNameWin32);
+                streamIndex = PhFindLastCharInStringRef(&fileName->sr, L':', FALSE);
+
+                if (streamIndex != -1 && streamIndex != 1)
+                {
+                    PhMoveReference(&fileName, PhSubstring(fileName, 0, streamIndex));
+                }
+
+                if (PhDoesFileExistsWin32(PhGetString(fileName)))
+                {
+                    PhShellExecuteUserString(
+                        PhMainWndHandle,
+                        L"ProgramInspectExecutables",
+                        fileName->Buffer,
+                        FALSE,
+                        L"Make sure the PE Viewer executable file is present."
+                        );
+                }
+
+                PhDereferenceObject(fileName);
+            }
+        }
+        break;
     case ID_DISK_PROPERTIES:
         {
             PET_DISK_ITEM diskItem = EtGetSelectedDiskItem();
 
             if (diskItem)
             {
-                PhShellProperties(PhMainWndHandle, diskItem->FileNameWin32->Buffer);
+                ULONG_PTR streamIndex;
+                PPH_STRING fileName;
+
+                // Strip ADS from path (dmex)
+                fileName = PhReferenceObject(diskItem->FileNameWin32);
+                streamIndex = PhFindLastCharInStringRef(&fileName->sr, L':', FALSE);
+
+                if (streamIndex != -1 && streamIndex != 1)
+                {
+                    PhMoveReference(&fileName, PhSubstring(fileName, 0, streamIndex));
+                }
+
+                PhShellProperties(PhMainWndHandle, fileName->Buffer);
+                PhDereferenceObject(fileName);
             }
         }
         break;
@@ -999,7 +1091,14 @@ VOID EtShowDiskContextMenu(
         PPH_EMENU_ITEM item;
 
         menu = PhCreateEMenu();
-        PhLoadResourceEMenuItem(menu, PluginInstance->DllBase, MAKEINTRESOURCE(IDR_DISK), 0);
+        PhInsertEMenuItem(menu, PhCreateEMenuItem(0, ID_DISK_GOTOPROCESS, L"&Go to process", NULL, NULL), ULONG_MAX);
+        PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), ULONG_MAX);
+        PhInsertEMenuItem(menu, PhCreateEMenuItem(0, ID_DISK_OPENFILELOCATION, L"Open &file location\bEnter", NULL, NULL), ULONG_MAX);
+        PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), ULONG_MAX);
+        PhInsertEMenuItem(menu, PhCreateEMenuItem(0, ID_DISK_INSPECT, L"&Inspect", NULL, NULL), ULONG_MAX);
+        PhInsertEMenuItem(menu, PhCreateEMenuItem(0, ID_DISK_PROPERTIES, L"P&roperties", NULL, NULL), ULONG_MAX);
+        PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), ULONG_MAX);
+        PhInsertEMenuItem(menu, PhCreateEMenuItem(0, ID_DISK_COPY, L"&Copy\bCtrl+C", NULL, NULL), ULONG_MAX);
         PhInsertCopyCellEMenuItem(menu, ID_DISK_COPY, TreeWindowHandle, ContextMenuEvent->Column);
         PhSetFlagsEMenuItem(menu, ID_DISK_OPENFILELOCATION, PH_EMENU_DEFAULT, PH_EMENU_DEFAULT);
 
@@ -1036,6 +1135,9 @@ VOID NTAPI EtpDiskItemAddedHandler(
     )
 {
     PET_DISK_ITEM diskItem = (PET_DISK_ITEM)Parameter;
+
+    if (!diskItem)
+        return;
 
     PhReferenceObject(diskItem);
     PhPushProviderEventQueue(&EtpDiskEventQueue, ProviderAddedEvent, Parameter, EtRunCount);

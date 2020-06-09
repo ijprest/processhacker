@@ -146,4 +146,15 @@ typedef ULONG (WINAPI *_UnDecorateSymbolNameW)(
     _In_ ULONG Flags
     );
 
+// undocumented
+typedef BOOL (WINAPI* _SymGetDiaSession)(
+    _In_ HANDLE ProcessHandle,
+    _In_ ULONG64 BaseOfDll,
+    _Out_ PVOID* IDiaSession
+    );
+
+typedef VOID (WINAPI* _SymFreeDiaString)(
+    _In_ PWSTR DiaString
+    );
+
 #endif

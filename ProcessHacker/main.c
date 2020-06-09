@@ -3,7 +3,7 @@
  *   main program
  *
  * Copyright (C) 2009-2016 wj32
- * Copyright (C) 2017-2019 dmex
+ * Copyright (C) 2017-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -76,6 +76,10 @@ VOID PhpEnablePrivileges(
     VOID
     );
 
+BOOLEAN PhInitializeDirectoryPolicy(
+    VOID
+    );
+
 BOOLEAN PhInitializeExceptionPolicy(
     VOID
     );
@@ -112,6 +116,8 @@ INT WINAPI wWinMain(
 #endif
 
     if (!NT_SUCCESS(PhInitializePhLibEx(L"Process Hacker", ULONG_MAX, Instance, 0, 0)))
+        return 1;
+    if (!PhInitializeDirectoryPolicy())
         return 1;
     if (!PhInitializeExceptionPolicy())
         return 1;
@@ -150,6 +156,21 @@ INT WINAPI wWinMain(
         !PhStartupParameters.PhSvc)
     {
         PhActivatePreviousInstance();
+    }
+
+    if (PhGetIntegerSetting(L"EnableStartAsAdmin") &&
+        !PhStartupParameters.NewInstance &&
+        !PhStartupParameters.ShowOptions &&
+        !PhStartupParameters.CommandMode &&
+        !PhStartupParameters.PhSvc)
+    {
+        if (!PhGetOwnTokenAttributes().Elevated)
+        {
+            if (SUCCEEDED(PhRunAsAdminTask(L"ProcessHackerTaskAdmin")))
+            {
+                RtlExitUserProcess(STATUS_SUCCESS);
+            }
+        }
     }
 
     if (PhGetIntegerSetting(L"EnableKph") &&
@@ -528,6 +549,32 @@ VOID PhInitializeFont(
     }
 }
 
+BOOLEAN PhInitializeDirectoryPolicy(
+    VOID
+    )
+{
+    PPH_STRING applicationDirectory;
+    UNICODE_STRING applicationDirectoryUs;
+
+    if (!(applicationDirectory = PhGetApplicationDirectory()))
+        return FALSE;
+
+    if (!PhStringRefToUnicodeString(&applicationDirectory->sr, &applicationDirectoryUs))
+    {
+        PhDereferenceObject(applicationDirectory);
+        return FALSE;
+    }
+
+    if (!NT_SUCCESS(RtlSetCurrentDirectory_U(&applicationDirectoryUs)))
+    {
+        PhDereferenceObject(applicationDirectory);
+        return FALSE;
+    }
+
+    PhDereferenceObject(applicationDirectory);
+    return TRUE;
+}
+
 BOOLEAN PhInitializeRestartPolicy(
     VOID
     )
@@ -890,6 +937,7 @@ VOID PhpShowKphError(
     _In_opt_ NTSTATUS Status
     )
 {
+#ifndef DEBUG
     if (Status == STATUS_NO_SUCH_FILE)
     {
         PhShowError2(
@@ -924,6 +972,7 @@ VOID PhpShowKphError(
                 );
         }
     }
+#endif
 }
 
 VOID PhInitializeKph(
@@ -962,7 +1011,7 @@ VOID PhInitializeKph(
     processhackerSigFileName = PhConcatStringRefZ(&applicationDirectory->sr, L"ProcessHacker.sig");
     PhDereferenceObject(applicationDirectory);
 
-    if (!RtlDoesFileExists_U(kprocesshackerFileName->Buffer))
+    if (!PhDoesFileExistsWin32(kprocesshackerFileName->Buffer))
     {
         //if (PhGetIntegerSetting(L"EnableKphWarnings") && !PhStartupParameters.PhSvc)
         //    PhpShowKphError(L"The Process Hacker kernel driver 'kprocesshacker.sys' was not found in the application directory.", STATUS_NO_SUCH_FILE);
@@ -1065,7 +1114,7 @@ VOID PhpInitializeSettings(
             {
                 settingsFileName = PhConcatStringRef2(&applicationFileName->sr, &settingsSuffix);
 
-                if (RtlDoesFileExists_U(settingsFileName->Buffer))
+                if (PhDoesFileExistsWin32(settingsFileName->Buffer))
                 {
                     PhSettingsFileName = settingsFileName;
                 }

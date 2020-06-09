@@ -86,9 +86,9 @@ _SymGetModuleBase64 SymGetModuleBase64_I = NULL;
 _SymRegisterCallbackW64 SymRegisterCallbackW64_I = NULL;
 _StackWalk64 StackWalk64_I = NULL;
 _MiniDumpWriteDump MiniDumpWriteDump_I = NULL;
-_SymbolServerGetOptions SymbolServerGetOptions = NULL;
-_SymbolServerSetOptions SymbolServerSetOptions = NULL;
 _UnDecorateSymbolNameW UnDecorateSymbolNameW_I = NULL;
+_SymGetDiaSession SymGetDiaSession_I = NULL;
+_SymFreeDiaString SymFreeDiaString_I = NULL;
 
 PPH_SYMBOL_PROVIDER PhCreateSymbolProvider(
     _In_opt_ HANDLE ProcessId
@@ -308,12 +308,8 @@ VOID PhpSymbolProviderCompleteInitialization(
         StackWalk64_I = PhGetDllBaseProcedureAddress(dbghelpHandle, "StackWalk64", 0);
         MiniDumpWriteDump_I = PhGetDllBaseProcedureAddress(dbghelpHandle, "MiniDumpWriteDump", 0);
         UnDecorateSymbolNameW_I = PhGetDllBaseProcedureAddress(dbghelpHandle, "UnDecorateSymbolNameW", 0);
-    }
-
-    if (symsrvHandle)
-    {
-        SymbolServerGetOptions = PhGetDllBaseProcedureAddress(symsrvHandle, "SymbolServerGetOptions", 0);
-        SymbolServerSetOptions = PhGetDllBaseProcedureAddress(symsrvHandle, "SymbolServerSetOptions", 0);
+        SymGetDiaSession_I = PhGetDllBaseProcedureAddress(dbghelpHandle, "SymGetDiaSession", 0);
+        SymFreeDiaString_I = PhGetDllBaseProcedureAddress(dbghelpHandle, "SymFreeDiaString", 0);
     }
 }
 
@@ -385,6 +381,7 @@ static LONG NTAPI PhpSymbolModuleCompareFunction(
     return uint64cmp(symbolModule1->BaseAddress, symbolModule2->BaseAddress);
 }
 
+_Success_(return)
 BOOLEAN PhGetLineFromAddress(
     _In_ PPH_SYMBOL_PROVIDER SymbolProvider,
     _In_ ULONG64 Address,
@@ -665,7 +662,7 @@ PPH_STRING PhGetSymbolFromAddress(
         PH_FORMAT format[3];
 
         PhInitFormatSR(&format[0], modBaseName->sr);
-        PhInitFormatC(&format[1], '!');
+        PhInitFormatC(&format[1], L'!');
         PhInitFormatSR(&format[2], symbolName->sr);
 
         symbol = PhFormat(format, 3, modBaseName->Length + 2 + symbolName->Length);
@@ -675,7 +672,7 @@ PPH_STRING PhGetSymbolFromAddress(
         PH_FORMAT format[5];
 
         PhInitFormatSR(&format[0], modBaseName->sr);
-        PhInitFormatC(&format[1], '!');
+        PhInitFormatC(&format[1], L'!');
         PhInitFormatSR(&format[2], symbolName->sr);
         PhInitFormatS(&format[3], L"+0x");
         PhInitFormatIX(&format[4], (ULONG_PTR)displacement);
@@ -702,6 +699,7 @@ CleanupExit:
     return symbol;
 }
 
+_Success_(return)
 BOOLEAN PhGetSymbolFromName(
     _In_ PPH_SYMBOL_PROVIDER SymbolProvider,
     _In_ PWSTR Name,
@@ -1017,7 +1015,11 @@ PRUNTIME_FUNCTION PhpLookupFunctionEntry(
 
             if (RelativeControlPc < Functions[i].BeginAddress)
                 high = i - 1;
+#ifdef _ARM64_
+            else if (RelativeControlPc >= (Functions[i].BeginAddress + Functions[i].FunctionLength))
+#else
             else if (RelativeControlPc >= Functions[i].EndAddress)
+#endif
                 low = i + 1;
             else
                 return &Functions[i];
@@ -1027,7 +1029,13 @@ PRUNTIME_FUNCTION PhpLookupFunctionEntry(
     {
         for (i = 0; i < NumberOfFunctions; i++)
         {
-            if (RelativeControlPc >= Functions[i].BeginAddress && RelativeControlPc < Functions[i].EndAddress)
+#ifdef _ARM64_
+            if (RelativeControlPc >= Functions[i].BeginAddress &&
+                RelativeControlPc < (Functions[i].BeginAddress + Functions[i].FunctionLength))
+#else
+            if (RelativeControlPc >= Functions[i].BeginAddress &&
+                RelativeControlPc < Functions[i].EndAddress)
+#endif
                 return &Functions[i];
         }
     }
@@ -1044,7 +1052,6 @@ NTSTATUS PhpAccessCallbackFunctionTable(
     )
 {
     static PH_STRINGREF knownFunctionTableDllsKeyName = PH_STRINGREF_INIT(L"Software\\Microsoft\\Windows NT\\CurrentVersion\\KnownFunctionTableDlls");
-
     NTSTATUS status;
     HANDLE keyHandle;
     ULONG returnLength;
@@ -1284,7 +1291,7 @@ BOOLEAN PhStackWalk(
     _In_opt_ PTRANSLATE_ADDRESS_ROUTINE64 TranslateAddress
     )
 {
-    BOOLEAN result;
+    BOOL result;
 
     PhpRegisterSymbolProvider(SymbolProvider);
 
@@ -1321,7 +1328,9 @@ BOOLEAN PhStackWalk(
         );
     PH_UNLOCK_SYMBOLS();
 
-    return result;
+    if (result)
+        return TRUE;
+    return FALSE;
 }
 
 BOOLEAN PhWriteMiniDumpProcess(
@@ -1342,7 +1351,7 @@ BOOLEAN PhWriteMiniDumpProcess(
         return FALSE;
     }
 
-    return MiniDumpWriteDump_I(
+    return !!MiniDumpWriteDump_I(
         ProcessHandle,
         HandleToUlong(ProcessId),
         FileHandle,
@@ -1491,7 +1500,7 @@ NTSTATUS PhWalkThreadStack(
     if ((Flags & PH_WALK_KERNEL_STACK) && KphIsConnected())
     {
         PVOID stack[256 - 2]; // See MAX_STACK_DEPTH
-        ULONG capturedFrames;
+        ULONG capturedFrames = 0;
         ULONG i;
 
         if (NT_SUCCESS(KphCaptureStackBackTraceThread(
@@ -1533,12 +1542,23 @@ NTSTATUS PhWalkThreadStack(
             goto SkipAmd64Stack;
 
         memset(&stackFrame, 0, sizeof(STACKFRAME64));
+
+        // Program counter, Stack pointer, Frame pointer
+#ifdef _ARM64_
+        stackFrame.AddrPC.Mode = AddrModeFlat;
+        stackFrame.AddrPC.Offset = context.Pc;
+        stackFrame.AddrStack.Mode = AddrModeFlat;
+        stackFrame.AddrStack.Offset = context.Sp;
+        stackFrame.AddrFrame.Mode = AddrModeFlat;
+        stackFrame.AddrFrame.Offset = context.Fp;
+#else
         stackFrame.AddrPC.Mode = AddrModeFlat;
         stackFrame.AddrPC.Offset = context.Rip;
         stackFrame.AddrStack.Mode = AddrModeFlat;
         stackFrame.AddrStack.Offset = context.Rsp;
         stackFrame.AddrFrame.Mode = AddrModeFlat;
         stackFrame.AddrFrame.Offset = context.Rbp;
+#endif
 
         while (TRUE)
         {
@@ -1694,24 +1714,22 @@ typedef struct _PH_ENUMERATE_SYMBOLS_CONTEXT
     PPH_ENUMERATE_SYMBOLS_CALLBACK UserCallback;
 } PH_ENUMERATE_SYMBOLS_CONTEXT, *PPH_ENUMERATE_SYMBOLS_CONTEXT;
 
-BOOL
-CALLBACK
-PhEnumerateSymbolsCallback(
-    _In_ PSYMBOL_INFOW pSymInfo,
+BOOL CALLBACK PhEnumerateSymbolsCallback(
+    _In_ PSYMBOL_INFOW SymbolInfo,
     _In_ ULONG SymbolSize,
     _In_ PVOID Context
     )
 {
-    PPH_ENUMERATE_SYMBOLS_CONTEXT phContext = (PPH_ENUMERATE_SYMBOLS_CONTEXT)Context;
+    PPH_ENUMERATE_SYMBOLS_CONTEXT context = (PPH_ENUMERATE_SYMBOLS_CONTEXT)Context;
     BOOLEAN result;
     PH_SYMBOL_INFO symbolInfo = { 0 };
 
-    if (pSymInfo->MaxNameLen)
+    if (SymbolInfo->MaxNameLen)
     {
         SIZE_T SuggestedLength;
 
-        symbolInfo.Name.Buffer = pSymInfo->Name;
-        symbolInfo.Name.Length = min(pSymInfo->NameLen, pSymInfo->MaxNameLen - 1) * sizeof(WCHAR);
+        symbolInfo.Name.Buffer = SymbolInfo->Name;
+        symbolInfo.Name.Length = min(SymbolInfo->NameLen, SymbolInfo->MaxNameLen - 1) * sizeof(WCHAR);
 
         // NameLen is unreliable, might be greater that expected
 
@@ -1723,20 +1741,22 @@ PhEnumerateSymbolsCallback(
         PhInitializeEmptyStringRef(&symbolInfo.Name);
     }
 
-    symbolInfo.TypeIndex = pSymInfo->TypeIndex;
-    symbolInfo.Index = pSymInfo->Index;
-    symbolInfo.Size = pSymInfo->Size;
-    symbolInfo.ModBase = pSymInfo->ModBase;
-    symbolInfo.Flags = pSymInfo->Flags;
-    symbolInfo.Value = pSymInfo->Value;
-    symbolInfo.Address = pSymInfo->Address;
-    symbolInfo.Register = pSymInfo->Register;
-    symbolInfo.Scope = pSymInfo->Scope;
-    symbolInfo.Tag = pSymInfo->Tag;
+    symbolInfo.TypeIndex = SymbolInfo->TypeIndex;
+    symbolInfo.Index = SymbolInfo->Index;
+    symbolInfo.Size = SymbolInfo->Size;
+    symbolInfo.ModBase = SymbolInfo->ModBase;
+    symbolInfo.Flags = SymbolInfo->Flags;
+    symbolInfo.Value = SymbolInfo->Value;
+    symbolInfo.Address = SymbolInfo->Address;
+    symbolInfo.Register = SymbolInfo->Register;
+    symbolInfo.Scope = SymbolInfo->Scope;
+    symbolInfo.Tag = SymbolInfo->Tag;
 
-    result = phContext->UserCallback(&symbolInfo, SymbolSize, phContext->UserContext);
+    result = context->UserCallback(&symbolInfo, SymbolSize, context->UserContext);
 
-    return (BOOL)result;
+    if (result)
+        return TRUE;
+    return FALSE;
 }
 
 BOOLEAN PhEnumerateSymbols(
@@ -1745,10 +1765,11 @@ BOOLEAN PhEnumerateSymbols(
     _In_ ULONG64 BaseOfDll,
     _In_opt_ PCWSTR Mask,
     _In_ PPH_ENUMERATE_SYMBOLS_CALLBACK EnumSymbolsCallback,
-    _In_opt_ const PVOID UserContext
+    _In_opt_ PVOID UserContext
     )
 {
-    BOOLEAN result;
+    BOOL result;
+    PH_ENUMERATE_SYMBOLS_CONTEXT enumContext;
 
     PhpRegisterSymbolProvider(SymbolProvider);
 
@@ -1758,9 +1779,9 @@ BOOLEAN PhEnumerateSymbols(
         return FALSE;
     }
 
-    PH_ENUMERATE_SYMBOLS_CONTEXT Context = { 0 };
-    Context.UserContext = UserContext;
-    Context.UserCallback = EnumSymbolsCallback;
+    memset(&enumContext, 0, sizeof(PH_ENUMERATE_SYMBOLS_CONTEXT));
+    enumContext.UserContext = UserContext;
+    enumContext.UserCallback = EnumSymbolsCallback;
 
     PH_LOCK_SYMBOLS();
 
@@ -1769,11 +1790,58 @@ BOOLEAN PhEnumerateSymbols(
         BaseOfDll,
         Mask,
         PhEnumerateSymbolsCallback,
-        &Context
+        &enumContext
         );
 
     PH_UNLOCK_SYMBOLS();
 
-    return result;
+    if (result)
+        return TRUE;
+    return FALSE;
 }
 
+BOOLEAN PhGetSymbolProviderDiaSession(
+    _In_ PPH_SYMBOL_PROVIDER SymbolProvider,
+    _In_ ULONG64 BaseOfDll,
+    _Out_ PVOID* DiaSession
+    )
+{
+    BOOL result;
+    PVOID session; // IDiaSession COM interface
+
+    PhpRegisterSymbolProvider(SymbolProvider);
+
+    if (!SymGetDiaSession_I)
+        return FALSE;
+
+    PH_LOCK_SYMBOLS();
+
+    result = SymGetDiaSession_I(
+        SymbolProvider->ProcessHandle,
+        BaseOfDll,
+        &session
+        );
+    //GetLastError(); // returns HRESULT
+
+    PH_UNLOCK_SYMBOLS();
+
+    if (result)
+    {
+        *DiaSession = session;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+VOID PhSymbolProviderFreeDiaString(
+    _In_ PWSTR DiaString
+    )
+{
+    //PhpRegisterSymbolProvider(SymbolProvider);
+
+    if (!SymFreeDiaString_I)
+        return;
+
+    SymFreeDiaString_I(DiaString);
+}

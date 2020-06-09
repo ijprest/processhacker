@@ -155,6 +155,7 @@ PPH_STRING UpdateVersionString(
     return versionHeader;
 }
 
+_Success_(return >= 0)
 NTSTATUS HashFileAndResetPosition(
     _In_ HANDLE FileHandle,
     _In_ PLARGE_INTEGER FileSize,
@@ -162,12 +163,12 @@ NTSTATUS HashFileAndResetPosition(
     _Out_ PPH_STRING *HashString
     )
 {
-    NTSTATUS status;
+    NTSTATUS status = STATUS_UNSUCCESSFUL;
     IO_STATUS_BLOCK iosb;
     PH_HASH_CONTEXT hashContext;
     PPH_STRING hashString = NULL;
     ULONG64 bytesRemaining;
-    FILE_POSITION_INFORMATION positionInfo;
+    LARGE_INTEGER position;
     LONG priority;
     IO_PRIORITY_HINT ioPriority;
     BYTE buffer[PAGE_SIZE];
@@ -225,14 +226,8 @@ NTSTATUS HashFileAndResetPosition(
             break;
         }
 
-        positionInfo.CurrentByteOffset.QuadPart = 0;
-        status = NtSetInformationFile(
-            FileHandle,
-            &iosb,
-            &positionInfo,
-            sizeof(FILE_POSITION_INFORMATION),
-            FilePositionInformation
-            );
+        position.QuadPart = 0;
+        status = PhSetFilePosition(FileHandle, &position);
     }
 
     PhSetThreadBasePriority(NtCurrentThread(), priority);
@@ -1451,9 +1446,9 @@ HRESULT CALLBACK TaskDialogBootstrapCallback(
             // Create the Taskdialog icons
             TaskDialogCreateIcons(context);
 
-            if (SUCCEEDED(CoCreateInstance(&CLSID_TaskbarList, NULL, CLSCTX_INPROC_SERVER, &IID_ITaskbarList3, &context->TaskbarListClass)))
+            if (SUCCEEDED(PhGetClassObject(L"explorerframe.dll", &CLSID_TaskbarList, &IID_ITaskbarList3, &context->TaskbarListClass)))
             {
-                if (!SUCCEEDED(ITaskbarList3_HrInit(context->TaskbarListClass)))
+                if (FAILED(ITaskbarList3_HrInit(context->TaskbarListClass)))
                 {
                     ITaskbarList3_Release(context->TaskbarListClass);
                     context->TaskbarListClass = NULL;

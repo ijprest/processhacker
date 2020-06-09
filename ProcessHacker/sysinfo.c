@@ -3,7 +3,7 @@
  *   System Information window
  *
  * Copyright (C) 2011-2016 wj32
- * Copyright (C) 2017-2019 dmex
+ * Copyright (C) 2017-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -694,7 +694,7 @@ BOOLEAN PhSipOnNotify(
                         if (badWidth < drawInfo->Width)
                             drawInfo->LabelMaxYIndexLimit = (drawInfo->Width - badWidth) / 2;
                         else
-                            drawInfo->LabelMaxYIndexLimit = -1;
+                            drawInfo->LabelMaxYIndexLimit = ULONG_MAX;
                     }
 
                     break;
@@ -860,7 +860,7 @@ VOID PhSipOnUserMessage(
                     section->Callback(section, SysInfoTick, NULL, NULL);
 
                     section->GraphState.Valid = FALSE;
-                    section->GraphState.TooltipIndex = -1;
+                    section->GraphState.TooltipIndex = ULONG_MAX;
                     Graph_MoveGrid(section->GraphHandle, 1);
                     Graph_Draw(section->GraphHandle);
                     Graph_UpdateTooltip(section->GraphHandle);
@@ -993,7 +993,7 @@ PPH_STRING PhSiSizeLabelYFunction(
 
         format.Type = SizeFormatType | FormatUsePrecision | FormatUseRadix;
         format.Precision = 0;
-        format.Radix = -1;
+        format.Radix = UCHAR_MAX;
         format.u.Size = size;
 
         return PhFormat(&format, 1, 0);
@@ -1020,7 +1020,7 @@ VOID PhSipUnregisterDialog(
 {
     ULONG index;
 
-    if ((index = PhFindItemList(PhSipDialogList, DialogWindowHandle)) != -1)
+    if ((index = PhFindItemList(PhSipDialogList, DialogWindowHandle)) != ULONG_MAX)
         PhRemoveItemList(PhSipDialogList, index);
 }
 
@@ -1682,14 +1682,14 @@ VOID PhSipDefaultDrawPanel(
                 // dmex: Multiline text doesn't fit; split the string and draw the first line.
                 if (DrawPanel->SubTitleOverflow)
                 {
-                    if (PhSplitStringRefAtChar(&DrawPanel->SubTitleOverflow->sr, '\n', &titlePart, &remainingPart))
+                    if (PhSplitStringRefAtChar(&DrawPanel->SubTitleOverflow->sr, L'\n', &titlePart, &remainingPart))
                         DrawText(hdc, titlePart.Buffer, (ULONG)titlePart.Length / sizeof(WCHAR), &rect, flags);
                     else
                         DrawText(hdc, DrawPanel->SubTitleOverflow->Buffer, (ULONG)DrawPanel->SubTitleOverflow->Length / sizeof(WCHAR), &rect, flags);
                 }
                 else
                 {
-                    if (PhSplitStringRefAtChar(&DrawPanel->SubTitle->sr, '\n', &titlePart, &remainingPart))
+                    if (PhSplitStringRefAtChar(&DrawPanel->SubTitle->sr, L'\n', &titlePart, &remainingPart))
                         DrawText(hdc, titlePart.Buffer, (ULONG)titlePart.Length / sizeof(WCHAR), &rect, flags);
                     else
                         DrawText(hdc, DrawPanel->SubTitle->Buffer, (ULONG)DrawPanel->SubTitle->Length / sizeof(WCHAR), &rect, flags);
@@ -2323,18 +2323,4 @@ VOID NTAPI PhSipSysInfoUpdateHandler(
     )
 {
     PostMessage(PhSipWindow, SI_MSG_SYSINFO_UPDATE, 0, 0);
-}
-
-PPH_STRING PhSipFormatSizeWithPrecision(
-    _In_ ULONG64 Size,
-    _In_ USHORT Precision
-    )
-{
-    PH_FORMAT format;
-
-    format.Type = SizeFormatType | FormatUsePrecision;
-    format.Precision = Precision;
-    format.u.Size = Size;
-
-    return PH_AUTO(PhFormat(&format, 1, 0));
 }

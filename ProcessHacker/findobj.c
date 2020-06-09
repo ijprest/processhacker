@@ -3,7 +3,7 @@
  *   object search
  *
  * Copyright (C) 2010-2016 wj32
- * Copyright (C) 2017-2019 dmex
+ * Copyright (C) 2017-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -324,11 +324,18 @@ BOOLEAN NTAPI PhpHandleObjectTreeNewCallback(
     PPH_HANDLE_SEARCH_CONTEXT context = Context;
     PPH_HANDLE_OBJECT_TREE_ROOT_NODE node;
 
+    if (!context)
+        return FALSE;
+
     switch (Message)
     {
     case TreeNewGetChildren:
         {
             PPH_TREENEW_GET_CHILDREN getChildren = Parameter1;
+
+            if (!getChildren)
+                break;
+
             node = (PPH_HANDLE_OBJECT_TREE_ROOT_NODE)getChildren->Node;
 
             if (!getChildren->Node)
@@ -362,6 +369,10 @@ BOOLEAN NTAPI PhpHandleObjectTreeNewCallback(
     case TreeNewIsLeaf:
         {
             PPH_TREENEW_IS_LEAF isLeaf = (PPH_TREENEW_IS_LEAF)Parameter1;
+
+            if (!isLeaf)
+                break;
+
             node = (PPH_HANDLE_OBJECT_TREE_ROOT_NODE)isLeaf->Node;
 
             isLeaf->IsLeaf = TRUE;
@@ -370,6 +381,10 @@ BOOLEAN NTAPI PhpHandleObjectTreeNewCallback(
     case TreeNewGetCellText:
         {
             PPH_TREENEW_GET_CELL_TEXT getCellText = (PPH_TREENEW_GET_CELL_TEXT)Parameter1;
+
+            if (!getCellText)
+                break;
+
             node = (PPH_HANDLE_OBJECT_TREE_ROOT_NODE)getCellText->Node;
 
             switch (getCellText->Id)
@@ -402,6 +417,10 @@ BOOLEAN NTAPI PhpHandleObjectTreeNewCallback(
     case TreeNewGetNodeColor:
         {
             PPH_TREENEW_GET_NODE_COLOR getNodeColor = Parameter1;
+
+            if (!getNodeColor)
+                break;
+
             node = (PPH_HANDLE_OBJECT_TREE_ROOT_NODE)getNodeColor->Node;
 
             getNodeColor->Flags = TN_CACHE | TN_AUTO_FORECOLOR;
@@ -417,6 +436,9 @@ BOOLEAN NTAPI PhpHandleObjectTreeNewCallback(
     case TreeNewKeyDown:
         {
             PPH_TREENEW_KEY_EVENT keyEvent = Parameter1;
+
+            if (!keyEvent)
+                break;
 
             switch (keyEvent->VirtualKey)
             {
@@ -1430,6 +1452,66 @@ INT_PTR CALLBACK PhpFindObjectsDlgProc(
                     
                             if (handleObjectNodes[i]->ResultType != HandleSearchResult)
                                 continue;
+
+                            if (WindowsVersion >= WINDOWS_10)
+                            {
+                                if (NT_SUCCESS(PhOpenProcess(
+                                    &processHandle,
+                                    PROCESS_QUERY_INFORMATION,
+                                    handleObjectNodes[i]->ProcessId
+                                    )))
+                                {
+                                    BOOLEAN critical = FALSE;
+                                    BOOLEAN strict = FALSE;
+                                    BOOLEAN breakOnTermination;
+                                    PROCESS_MITIGATION_POLICY_INFORMATION policyInfo;
+
+                                    if (NT_SUCCESS(PhGetProcessBreakOnTermination(
+                                        processHandle,
+                                        &breakOnTermination
+                                        )))
+                                    {
+                                        if (breakOnTermination)
+                                        {
+                                            critical = TRUE;
+                                        }
+                                    }
+
+                                    policyInfo.Policy = ProcessStrictHandleCheckPolicy;
+                                    policyInfo.StrictHandleCheckPolicy.Flags = 0;
+
+                                    if (NT_SUCCESS(NtQueryInformationProcess(
+                                        processHandle,
+                                        ProcessMitigationPolicy,
+                                        &policyInfo,
+                                        sizeof(PROCESS_MITIGATION_POLICY_INFORMATION),
+                                        NULL
+                                        )))
+                                    {
+                                        if (policyInfo.StrictHandleCheckPolicy.Flags != 0)
+                                        {
+                                            strict = TRUE;
+                                        }
+                                    }
+
+                                    if (critical && strict)
+                                    {
+                                        if (!PhShowConfirmMessage(
+                                            hwndDlg,
+                                            L"close",
+                                            L"critical handle(s)",
+                                            L"You are about to close one or more handles for a critical process with strict handle checks enabled. This will shut down the operating system immediately.\r\n\r\n",
+                                            TRUE
+                                            ))
+                                        {
+                                            NtClose(processHandle);
+                                            continue;
+                                        }
+                                    }
+
+                                    NtClose(processHandle);
+                                }
+                            }
                     
                             if (NT_SUCCESS(status = PhOpenProcess(
                                 &processHandle,

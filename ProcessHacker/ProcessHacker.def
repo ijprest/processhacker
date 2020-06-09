@@ -116,6 +116,7 @@ EXPORTS
     PhCreateThread2
     PhCreateThreadEx
     PhDecodeUnicodeDecoder
+    PhDelayExecution
     PhDeleteArray
     PhDeleteBytesBuilder
     PhDeleteCallback
@@ -172,6 +173,7 @@ EXPORTS
     PhHashStringRef
     PhHexStringToBuffer
     PhHexStringToBufferEx
+    PhHungWindowFromGhostWindow
     PhInitializeArray
     PhInitializeAvlTree
     PhInitializeBytesBuilder
@@ -233,6 +235,7 @@ EXPORTS
 
 ; phnative
     PhCreateDirectory
+    PhCreateFile
     PhCreateFileWin32
     PhCreateFileWin32Ex
     PhCreateKey
@@ -241,6 +244,7 @@ EXPORTS
     PhConnectPipe
     PhDeleteDirectory
     PhDeleteFileWin32
+    PhDetermineDosPathNameType
     PhDoesFileExistsWin32
     PhDisconnectNamedPipe
     PhEnumerateKey
@@ -265,6 +269,7 @@ EXPORTS
     PhFindProcessInformation
     PhFindProcessInformationByImageName
     PhGetFileName
+    PhGetFilePosition
     PhGetFileSize
     PhGetJobProcessIdList
     PhGetKernelFileName
@@ -309,12 +314,14 @@ EXPORTS
     PhQueryValueKey
     PhQueryTokenVariableSize
     PhResolveDevicePrefix
+    PhSetFilePosition
     PhSetFileSize
     PhSetObjectSecurity
     PhSetTokenIsVirtualizationEnabled
     PhSetTokenPrivilege
     PhSetTokenPrivilege2
     PhSetTokenSessionId
+    PhSetValueKey
     PhTerminateProcess = PhTerminateProcessPublic
     PhTransceiveNamedPipe
     PhUnloadDllProcess
@@ -364,6 +371,7 @@ EXPORTS
     PhGetApplicationFileName
     PhGetBaseDirectory
     PhGetBaseName
+    PhGetClassObject
     PhGetDllFileName
     PhGetFileDialogFileName
     PhGetFileDialogFilterIndex
@@ -383,6 +391,8 @@ EXPORTS
     PhInitializeHash
     PhInitializeImageVersionInfo
     PhIsExecutablePacked
+    PhLargeIntegerToLocalSystemTime
+    PhLargeIntegerToSystemTime
     PhMapFlags1
     PhMapFlags2
     PhMatchWildcards
@@ -407,6 +417,7 @@ EXPORTS
     PhShowMessage
     PhShowMessage2
     PhShowStatus
+    PhStringToGuid
     PhUpdateHash
 
 ; circbuf
@@ -433,6 +444,7 @@ EXPORTS
 
 ; cpysave
     PhGetGenericTreeNewLines
+    PhGetListViewItemText
     PhGetTreeNewText
 
 ; emenu
@@ -550,6 +562,7 @@ EXPORTS
 ; hndlinfo
     PhEnumObjectTypes
     PhFormatNativeKeyName
+    PhGetEtwPublisherName
     PhGetHandleInformation
     PhGetHandleInformationEx
     PhStdGetClientIdName
@@ -684,6 +697,7 @@ EXPORTS
     PhGetJsonValueAsLong64
     PhCreateJsonObject
     PhGetJsonObject
+    PhGetJsonObjectType
     PhGetJsonObjectLength
     PhGetJsonObjectBool
     PhAddJsonObject
@@ -720,6 +734,7 @@ EXPORTS
     PhHttpSocketReadDataToBuffer
     PhHttpSocketDownloadString
     PhHttpSocketSetFeature
+    PhHttpSocketSetSecurity
     PhHttpSocketParseUrl
     PhHttpSocketGetErrorMessage
     PhHttpSocketSetCredentials

@@ -3,7 +3,7 @@
  *   GPU monitoring
  *
  * Copyright (C) 2011-2015 wj32
- * Copyright (C) 2016-2018 dmex
+ * Copyright (C) 2016-2020 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -57,7 +57,7 @@ VOID EtGpuMonitorInitialization(
     VOID
     )
 {
-    EtD3DEnabled = !!PhGetIntegerSetting(SETTING_NAME_ENABLE_D3DKMT);
+    EtD3DEnabled = !!PhGetIntegerSetting(SETTING_NAME_ENABLE_GPUPERFCOUNTERS);
   
     if (PhGetIntegerSetting(SETTING_NAME_ENABLE_GPU_MONITOR))
     {
@@ -127,27 +127,6 @@ BOOLEAN EtCloseAdapterHandle(
     return NT_SUCCESS(D3DKMTCloseAdapter(&closeAdapter));
 }
 
-D3DKMT_DRIVERVERSION EtpGetGpuWddmVersion(
-    _In_ D3DKMT_HANDLE AdapterHandle
-    )
-{
-    D3DKMT_DRIVERVERSION driverVersion;
-
-    memset(&driverVersion, 0, sizeof(D3DKMT_DRIVERVERSION));
-
-    if (NT_SUCCESS(EtQueryAdapterInformation(
-        AdapterHandle,
-        KMTQAITYPE_DRIVERVERSION,
-        &driverVersion,
-        sizeof(D3DKMT_ADAPTERTYPE)
-        )))
-    {
-        return driverVersion;
-    }
-
-    return KMT_DRIVERVERSION_WDDM_1_0;
-}
-
 BOOLEAN EtpIsGpuSoftwareDevice(
     _In_ D3DKMT_HANDLE AdapterHandle
     )
@@ -176,10 +155,10 @@ PPH_STRING EtpGetNodeEngineTypeString(
     _In_ D3DKMT_NODEMETADATA NodeMetaData
     )
 {
-    switch (NodeMetaData.EngineType)
+    switch (NodeMetaData.NodeData.EngineType)
     {
     case DXGK_ENGINE_TYPE_OTHER:
-        return PhCreateString(NodeMetaData.FriendlyName);
+        return PhCreateString(NodeMetaData.NodeData.FriendlyName);
     case DXGK_ENGINE_TYPE_3D:
         return PhCreateString(L"3D");
     case DXGK_ENGINE_TYPE_VIDEO_DECODE:
@@ -198,7 +177,7 @@ PPH_STRING EtpGetNodeEngineTypeString(
         return PhCreateString(L"Crypto");
     }
 
-    return PhFormatString(L"ERROR (%lu)", NodeMetaData.EngineType);
+    return PhFormatString(L"ERROR (%lu)", NodeMetaData.NodeData.EngineType);
 }
 
 PPH_STRING EtpQueryDeviceProperty(
@@ -259,13 +238,25 @@ PPH_STRING EtpQueryDeviceProperty(
     case DEVPROP_TYPE_FILETIME:
         {
             PPH_STRING string;
-            FILETIME newFileTime;
+            PFILETIME fileTime;
+            LARGE_INTEGER time;
             SYSTEMTIME systemTime;
 
-            FileTimeToLocalFileTime((PFILETIME)buffer, &newFileTime);
-            FileTimeToSystemTime(&newFileTime, &systemTime);
+            fileTime = (PFILETIME)buffer;
+            time.HighPart = fileTime->dwHighDateTime;
+            time.LowPart = fileTime->dwLowDateTime;
+
+            PhLargeIntegerToLocalSystemTime(&systemTime, &time);
 
             string = PhFormatDate(&systemTime, NULL);
+
+            //FILETIME newFileTime;
+            //SYSTEMTIME systemTime;
+            //
+            //FileTimeToLocalFileTime((PFILETIME)buffer, &newFileTime);
+            //FileTimeToSystemTime(&newFileTime, &systemTime);
+            //
+            //string = PhFormatDate(&systemTime, NULL);
 
             PhFree(buffer);
             return string;
@@ -342,9 +333,6 @@ PPH_STRING EtpQueryDeviceRegistryProperty(
     return string;
 }
 
-// Note: MSDN states this value must be created by video devices BUT Task Manager 
-// doesn't query this value and I currently don't know where it's getting the gpu memory information.
-// https://docs.microsoft.com/en-us/windows-hardware/drivers/display/registering-hardware-information
 ULONG64 EtpQueryGpuInstalledMemory(
     _In_ DEVINST DeviceHandle
     )
@@ -369,12 +357,33 @@ ULONG64 EtpQueryGpuInstalledMemory(
         if (installedMemory == ULONG_MAX) // HACK
             installedMemory = ULLONG_MAX;
 
+        // Intel GPU devices incorrectly create the key with type REG_BINARY.
+        if (installedMemory == ULLONG_MAX)
+        {
+            PH_STRINGREF valueName;
+            PKEY_VALUE_PARTIAL_INFORMATION buffer;
+
+            PhInitializeStringRef(&valueName, L"HardwareInformation.MemorySize");
+
+            if (NT_SUCCESS(PhQueryValueKey(keyHandle, &valueName, KeyValuePartialInformation, &buffer)))
+            {
+                if (buffer->Type == REG_BINARY)
+                {
+                    if (buffer->DataLength == sizeof(ULONG))
+                        installedMemory = *(PULONG)buffer->Data;
+                }
+
+                PhFree(buffer);
+            }
+        }
+
         NtClose(keyHandle);
     }
 
     return installedMemory;
 }
 
+_Success_(return)
 BOOLEAN EtQueryDeviceProperties(
     _In_ PWSTR DeviceInterface,
     _Out_opt_ PPH_STRING *Description,
@@ -546,7 +555,7 @@ PETP_GPU_ADAPTER EtpAddDisplayAdapter(
             D3DKMT_NODEMETADATA metaDataInfo;
 
             memset(&metaDataInfo, 0, sizeof(D3DKMT_NODEMETADATA));
-            metaDataInfo.NodeOrdinal = i;
+            metaDataInfo.NodeOrdinalAndAdapterIndex = MAKEWORD(i, 0);
 
             if (NT_SUCCESS(EtQueryAdapterInformation(
                 AdapterHandle,
